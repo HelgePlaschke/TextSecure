@@ -10,9 +10,16 @@
   <string name="ApplicationPreferenceActivity_you_havent_set_a_passphrase_yet">Sie haben noch kein Passwort festgelegt!</string>
   <string name="ApplicationPreferencesActivity_messages_per_conversation">Nachrichten pro Konversation</string>
   <string name="ApplicationPreferencesActivity_delete_all_old_messages_now">Alle alten Nachrichten löschen?</string>
-  <string name="ApplicationPreferencesActivity_are_you_sure_you_would_like_to_immediately_trim_all_conversation_threads_to_the_s_most_recent_messages">Bist du dir sicher, dass du alle Konversationen auf die letzten %s Nachrichten kürzen willst?</string>
+  <string name="ApplicationPreferencesActivity_are_you_sure_you_would_like_to_immediately_trim_all_conversation_threads_to_the_s_most_recent_messages">Sind Sie sich sicher, dass Sie alle Konversationen auf die letzten %s Nachrichten kürzen wollen?</string>
   <string name="ApplicationPreferencesActivity_delete">Löschen</string>
   <string name="ApplicationPreferencesActivity_my">Meine</string>
+  <string name="ApplicationPreferencesActivity_disable_storage_encryption">Verschlüsselung des Speichers deaktivieren?</string>
+  <string name="ApplicationPreferencesActivity_warning_this_will_disable_storage_encryption_for_all_messages">
+	  Warnung, dies deaktiviert die Speicherverschlüsselung für alle Nachrichten und Schlüssel. Ihre verschlüsselten
+	  Sitzungen werden weiterhin funktionieren, aber jeder mit physischem Zugriff auf das Gerät wird
+	  auf diese zugreifen können.
+  </string>
+  <string name="ApplicationPreferencesActivity_disable">Deaktiviert</string>
   <!--AttachmentTypeSelectorAdapter-->
   <string name="AttachmentTypeSelectorAdapter_picture">Bild</string>
   <string name="AttachmentTypeSelectorAdapter_video">Video</string>
@@ -93,7 +100,7 @@
   <string name="ImportFragment_restoring_an_encrypted_backup_will_completely_replace_your_existing_keys">\nEine wiederhergestellte verschlüsselten Sicherung ersetzt Ihre bestehenden Keys, Einstellungen und\nNachrichten. Sie werden jegliche Informationen verlieren, die in Ihrer jetzigen TextSecure Installation sind,\naber nicht in der Sicherung.</string>
   <string name="ImportFragment_restore">Wiederherstellen</string>
   <string name="ImportFragment_import_plaintext_backup">Importiere Klartext-Sicherung?</string>
-  <string name="ImportFragment_this_will_import_messages_from_a_plaintext_backup">Es werden jetzt die SMS von der Systemdatenbank importiert.\nWenn Sie dies schon einmal gemacht haben, werden ggf. doppelte Einträge erzeugt.</string>
+  <string name="ImportFragment_this_will_import_messages_from_a_plaintext_backup">Dies importiert Nachrichten aus einem Klartext-Backup.\nFalls Sie vorab schon einmal Nachrichten aus der SMS Systemdatenbank importiert haben, werden ggf. doppelte Einträge erzeugt.</string>
   <string name="ImportFragment_importing">Importiere</string>
   <string name="ImportFragment_import_plaintext_backup_elipse">Importiere Klartext-Sicherung</string>
   <string name="ImportFragment_no_plaintext_backup_found">Keine Klartext-Sicherung gefunden</string>
@@ -116,13 +123,13 @@
   <string name="PassphraseChangeActivity_incorrect_old_passphrase_exclamation">Das eingegebene alte Passwort ist falsch!</string>
   <!--PassphraseCreateActivity-->
   <string name="PassphraseCreateActivity_passphrases_dont_match">Passphrasen stimmen nicht überein</string>
-  <string name="PassphraseCreateActivity_you_must_specify_a_password">Du musst ein Passwort angeben</string>
+  <string name="PassphraseCreateActivity_you_must_specify_a_password">Sie müssen ein Passwort angeben</string>
   <!--PassphrasePromptActivity-->
   <string name="PassphrasePromptActivity_invalid_passphrase_exclamation">Ungültiges Passwort!</string>
   <!--PromptApnActivity-->
-  <string name="PromptApnActivity_you_must_specify_an_mmsc_url_for_your_carrier">Du musst eine MMSC URL für deinen Anbieter angeben.</string>
+  <string name="PromptApnActivity_you_must_specify_an_mmsc_url_for_your_carrier">Sie müssen eine MMSC URL für Ihren Anbieter angeben.</string>
   <string name="PromptApnActivity_mms_settings_updated">MMS Einstellungen upgedatet</string>
-  <string name="PromptApnActivity_you_can_modify_these_values_from_the_textsecure_settings_menu_at_any_time_">Du kannst diese Werte jederzeit im TextSecure Einstellungsmenü ändern.</string>
+  <string name="PromptApnActivity_you_can_modify_these_values_from_the_textsecure_settings_menu_at_any_time_">Sie können diese Werte jederzeit im TextSecure Einstellungsmenü ändern.</string>
   <!--ReceiveKeyActivity-->
   <string name="ReceiveKeyActivity_the_signature_on_this_key_exchange_is_different">Die Signatur dieses Schlüsselaustauschs ist eine andere als die schon von diesem Kontakt erhaltenen.\nDas könnte bedeuten, dass jemand versucht, Ihr Gespräch abzufangen oder\ndass dieser Kontakt TextSecure neu installiert hat und nun einen neuen Schlüssel benutzt.</string>
   <string name="ReceiveKeyActivity_you_may_wish_to_verify_this_contact">Sie können diesen Kontakt überprüfen.</string>
@@ -224,7 +231,7 @@
   <string name="create_passphrase_activity__continue">Fortsetzen</string>
   <string name="create_passphrase_activity__generating_secrets">GENERIERT SICHERHEITSSCHLÜSSEL</string>
   <!--database_migration_activity-->
-  <string name="database_migration_activity__would_you_like_to_import_your_existing_text_messages">Möchtest du deine vorhandenen Nachrichten in TextSecure\'s verschlüsselte Datenbank importieren?</string>
+  <string name="database_migration_activity__would_you_like_to_import_your_existing_text_messages">Möchten Sie Ihre vorhandenen Nachrichten in TextSecure\'s verschlüsselte Datenbank importieren?</string>
   <string name="database_migration_activity__the_default_system_database_will_not_be_modified">Die Standard Datenbank wird in keiner Weise verändert.</string>
   <string name="database_migration_activity__skip">Überspringen</string>
   <string name="database_migration_activity__import">Importieren</string>
@@ -297,6 +304,8 @@
   <string name="preferences__change_passphrase">Passwort ändern</string>
   <string name="preferences__change_my_passphrase">Mein Passwort ändern</string>
   <string name="preferences__complete_key_exchanges">Schlüsselaustausch abschliessen</string>
+  <string name="preferences__disable_passphrase">Passwort deaktivieren</string>
+  <string name="preferences__disable_local_encryption_of_messages_and_keys">Lokale Verschlüsselung von Nachrichten und Schlüsseln deaktivieren</string>
   <string name="preferences__automatically_complete_key_exchanges_for_new_sessions_or_for_existing_sessions_with_the_same_identity_key">Automatischer Schlüsselaustausch für neue Sitzungen und bestehende Sitzungen mit demselben persönlichen Schlüssel</string>
   <string name="preferences__forget_passphrase_from_memory_after_some_interval">Passwort im Speicher nach einer gewissen Zeit vergessen</string>
   <string name="preferences__timeout_passphrase">Passwort im Speicher vergessen</string>
@@ -350,6 +359,7 @@
   <string name="preferences__dark_theme">Dunkles Theme</string>
   <string name="preferences__appearance">Aussehen</string>
   <string name="preferences__theme">Theme</string>
+  <string name="preferences__default">Standard</string>
   <!--****************************************-->
   <!--menus-->
   <!--****************************************-->
