@@ -5,17 +5,12 @@
               android:layout_height="match_parent"
               android:orientation="vertical">
 
-    <ListView android:id="@android:id/list"
-              style="?android:attr/listViewWhiteStyle"
-              android:layout_width="fill_parent"
-              android:layout_height="0dp"
-              android:layout_weight="1.0"
-              android:drawSelectorOnTop="true"
-              android:transcriptMode="normal"
-              android:scrollbarAlwaysDrawVerticalTrack="false"
-              android:scrollbarStyle="insideOverlay"
-              android:stackFromBottom="true"
-              android:fadingEdge="none"
-              android:layout_marginBottom="1dip"/>
+    <android.support.v7.widget.RecyclerView
+            android:id="@android:id/list"
+            android:layout_width="fill_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1.0"
+            android:scrollbars="vertical"
+            android:cacheColorHint="?conversation_background" />
 
 </LinearLayout>

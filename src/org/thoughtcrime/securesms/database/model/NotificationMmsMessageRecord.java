@@ -21,8 +21,12 @@ import android.text.SpannableString;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.database.MmsDatabase;
+import org.thoughtcrime.securesms.database.documents.NetworkFailure;
+import org.thoughtcrime.securesms.database.documents.IdentityKeyMismatch;
 import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.recipients.Recipients;
+
+import java.util.LinkedList;
 
 /**
  * Represents the message record model for MMS messages that are
@@ -41,13 +45,14 @@ public class NotificationMmsMessageRecord extends MessageRecord {
   private final byte[] transactionId;
 
   public NotificationMmsMessageRecord(Context context, long id, Recipients recipients,
-                                      Recipient individualRecipient,
-                                      long dateSent, long dateReceived, long threadId,
-                                      byte[] contentLocation, long messageSize, long expiry,
-                                      int status, byte[] transactionId, long mailbox)
+                                      Recipient individualRecipient, int recipientDeviceId,
+                                      long dateSent, long dateReceived, int receiptCount,
+                                      long threadId, byte[] contentLocation, long messageSize,
+                                      long expiry, int status, byte[] transactionId, long mailbox)
   {
-    super(context, id, new Body("", true), recipients, individualRecipient, dateSent, dateReceived,
-          threadId, DELIVERY_STATUS_NONE, mailbox);
+    super(context, id, new Body("", true), recipients, individualRecipient, recipientDeviceId,
+          dateSent, dateReceived, threadId, DELIVERY_STATUS_NONE, receiptCount, mailbox,
+          new LinkedList<IdentityKeyMismatch>(), new LinkedList<NetworkFailure>());
 
     this.contentLocation = contentLocation;
     this.messageSize     = messageSize;
@@ -98,6 +103,11 @@ public class NotificationMmsMessageRecord extends MessageRecord {
 
   @Override
   public boolean isMms() {
+    return true;
+  }
+
+  @Override
+  public boolean isMmsNotification() {
     return true;
   }
 

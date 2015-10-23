@@ -16,13 +16,10 @@
  */
 package org.thoughtcrime.securesms.preferences;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.SharedPreferences;
 import android.os.Parcelable;
 import android.preference.ListPreference;
-import android.preference.PreferenceManager;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -31,8 +28,10 @@ import android.widget.SeekBar.OnSeekBarChangeListener;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.thoughtcrime.securesms.ApplicationPreferencesActivity;
+import com.afollestad.materialdialogs.AlertDialogWrapper;
+
 import org.thoughtcrime.securesms.R;
+import org.thoughtcrime.securesms.util.TextSecurePreferences;
 
 /**
  * List preference for LED blink pattern notification.
@@ -66,22 +65,22 @@ public class LedBlinkPatternListPreference extends ListPreference implements OnS
     super.onDialogClosed(positiveResult);
 
     if (positiveResult) {
-      String blinkPattern = PreferenceManager.getDefaultSharedPreferences(context).getString(ApplicationPreferencesActivity.LED_BLINK_PREF, "500,2000");
+      String blinkPattern = TextSecurePreferences.getNotificationLedPattern(context);
       if (blinkPattern.equals("custom")) showDialog();
     }
   }
 
   private void initializeSeekBarValues() {
-    String patternString  = PreferenceManager.getDefaultSharedPreferences(context).getString(ApplicationPreferencesActivity.LED_BLINK_PREF_CUSTOM, "500,2000");
+    String patternString  = TextSecurePreferences.getNotificationLedPatternCustom(context);
     String[] patternArray = patternString.split(",");
     seekBarOn.setProgress(Integer.parseInt(patternArray[0]));
     seekBarOff.setProgress(Integer.parseInt(patternArray[1]));
   }
 
   private void initializeDialog(View view) {
-    AlertDialog.Builder builder = new AlertDialog.Builder(context);
-    builder.setIcon(android.R.drawable.ic_dialog_info);
-    builder.setTitle("Set Custom LED Blink Pattern");
+    AlertDialogWrapper.Builder builder = new AlertDialogWrapper.Builder(context);
+    builder.setIconAttribute(R.attr.dialog_info_icon);
+    builder.setTitle(R.string.preferences__pref_led_blink_custom_pattern_title);
     builder.setView(view);
     builder.setOnCancelListener(new CustomDialogCancelListener());
     builder.setNegativeButton(android.R.string.cancel, new CustomDialogCancelListener());
@@ -103,8 +102,7 @@ public class LedBlinkPatternListPreference extends ListPreference implements OnS
 
     initializeSeekBarValues();
     initializeDialog(view);
-    dialogInProgress = true;
-
+    
     dialogInProgress = true;
   }
 
@@ -152,9 +150,8 @@ public class LedBlinkPatternListPreference extends ListPreference implements OnS
       String pattern   = seekBarOnLabel.getText() + "," + seekBarOffLabel.getText();
       dialogInProgress = false;
 
-      SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
-      preferences.edit().putString(ApplicationPreferencesActivity.LED_BLINK_PREF_CUSTOM, pattern).commit();
-      Toast.makeText(context, "Custom LED blink pattern set!", Toast.LENGTH_LONG).show();
+      TextSecurePreferences.setNotificationLedPatternCustom(context, pattern);
+      Toast.makeText(context, R.string.preferences__pref_led_blink_custom_pattern_set, Toast.LENGTH_LONG).show();
     }
 
   }

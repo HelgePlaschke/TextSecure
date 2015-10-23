@@ -19,12 +19,14 @@ package org.thoughtcrime.securesms.database.model;
 import android.content.Context;
 import android.text.Spannable;
 import android.text.SpannableString;
+import android.text.TextUtils;
 import android.text.style.StyleSpan;
 
 import org.thoughtcrime.securesms.R;
+import org.thoughtcrime.securesms.database.MmsSmsColumns;
 import org.thoughtcrime.securesms.database.SmsDatabase;
 import org.thoughtcrime.securesms.recipients.Recipients;
-import org.thoughtcrime.securesms.util.Util;
+import org.thoughtcrime.securesms.util.GroupUtil;
 
 /**
  * The message record model which represents thread heading messages.
@@ -54,6 +56,10 @@ public class ThreadRecord extends DisplayRecord {
   public SpannableString getDisplayBody() {
     if (SmsDatabase.Types.isDecryptInProgressType(type)) {
       return emphasisAdded(context.getString(R.string.MessageDisplayHelper_decrypting_please_wait));
+    } else if (isGroupUpdate()) {
+      return emphasisAdded(GroupUtil.getDescription(context, getBody().getBody()).toString());
+    } else if (isGroupQuit()) {
+      return emphasisAdded(context.getString(R.string.ThreadRecord_left_the_group));
     } else if (isKeyExchange()) {
       return emphasisAdded(context.getString(R.string.ConversationListItem_key_exchange_message));
     } else if (SmsDatabase.Types.isFailedDecryptType(type)) {
@@ -61,9 +67,22 @@ public class ThreadRecord extends DisplayRecord {
     } else if (SmsDatabase.Types.isNoRemoteSessionType(type)) {
       return emphasisAdded(context.getString(R.string.MessageDisplayHelper_message_encrypted_for_non_existing_session));
     } else if (!getBody().isPlaintext()) {
-      return emphasisAdded(context.getString(R.string.MessageNotifier_encrypted_message));
+      return emphasisAdded(context.getString(R.string.MessageNotifier_locked_message));
+    } else if (SmsDatabase.Types.isEndSessionType(type)) {
+      return emphasisAdded(context.getString(R.string.ThreadRecord_secure_session_reset));
+    } else if (MmsSmsColumns.Types.isLegacyType(type)) {
+      return emphasisAdded(context.getString(R.string.MessageRecord_message_encrypted_with_a_legacy_protocol_version_that_is_no_longer_supported));
+    } else if (MmsSmsColumns.Types.isDraftMessageType(type)) {
+      String draftText = context.getString(R.string.ThreadRecord_draft);
+      return emphasisAdded(draftText + " " + getBody().getBody(), 0, draftText.length());
+    } else if (SmsDatabase.Types.isOutgoingCall(type)) {
+      return emphasisAdded(context.getString(org.thoughtcrime.securesms.R.string.ThreadRecord_called));
+    } else if (SmsDatabase.Types.isIncomingCall(type)) {
+      return emphasisAdded(context.getString(org.thoughtcrime.securesms.R.string.ThreadRecord_called_you));
+    } else if (SmsDatabase.Types.isMissedCall(type)) {
+      return emphasisAdded(context.getString(org.thoughtcrime.securesms.R.string.ThreadRecord_missed_call));
     } else {
-      if (Util.isEmpty(getBody().getBody())) {
+      if (TextUtils.isEmpty(getBody().getBody())) {
         return new SpannableString(context.getString(R.string.MessageNotifier_no_subject));
       } else {
         return new SpannableString(getBody().getBody());
@@ -72,10 +91,13 @@ public class ThreadRecord extends DisplayRecord {
   }
 
   private SpannableString emphasisAdded(String sequence) {
+    return emphasisAdded(sequence, 0, sequence.length());
+  }
+
+  private SpannableString emphasisAdded(String sequence, int start, int end) {
     SpannableString spannable = new SpannableString(sequence);
-    spannable.setSpan(new StyleSpan(android.graphics.Typeface.ITALIC), 0,
-                      sequence.length(),
-                      Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+    spannable.setSpan(new StyleSpan(android.graphics.Typeface.ITALIC),
+                      start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
     return spannable;
   }
 

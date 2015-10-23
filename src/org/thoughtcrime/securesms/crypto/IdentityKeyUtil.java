@@ -1,5 +1,6 @@
 /** 
  * Copyright (C) 2011 Whisper Systems
+ * Copyright (C) 2013 Open Whisper Systems
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,28 +17,20 @@
  */
 package org.thoughtcrime.securesms.crypto;
 
-import java.io.IOException;
-import java.math.BigInteger;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-
-import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
-import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
-import org.bouncycastle.crypto.params.ECPublicKeyParameters;
-import org.bouncycastle.crypto.signers.ECDSASigner;
-import org.thoughtcrime.bouncycastle.asn1.ASN1Encodable;
-import org.thoughtcrime.bouncycastle.asn1.ASN1Object;
-import org.thoughtcrime.bouncycastle.asn1.ASN1Sequence;
-import org.thoughtcrime.bouncycastle.asn1.DERInteger;
-import org.thoughtcrime.bouncycastle.asn1.DERSequence;
-import org.thoughtcrime.securesms.util.Base64;
-import org.thoughtcrime.securesms.util.Combiner;
-import org.thoughtcrime.securesms.util.Conversions;
-
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
-import android.util.Log;
+import android.support.annotation.NonNull;
+
+import org.thoughtcrime.securesms.util.Base64;
+import org.whispersystems.libaxolotl.IdentityKey;
+import org.whispersystems.libaxolotl.IdentityKeyPair;
+import org.whispersystems.libaxolotl.InvalidKeyException;
+import org.whispersystems.libaxolotl.ecc.Curve;
+import org.whispersystems.libaxolotl.ecc.ECKeyPair;
+import org.whispersystems.libaxolotl.ecc.ECPrivateKey;
+
+import java.io.IOException;
 
 /**
  * Utility class for working with identity keys.
@@ -47,132 +40,109 @@ import android.util.Log;
 
 public class IdentityKeyUtil {
 
-  private static final String IDENTITY_PUBLIC_KEY_PREF  = "pref_identity_public";
-  private static final String IDENTITY_PRIVATE_KEY_PREF = "pref_identity_private";
-	
+  private static final String TAG = IdentityKeyUtil.class.getSimpleName();
+
+  private static final String IDENTITY_PUBLIC_KEY_CIPHERTEXT_LEGACY_PREF  = "pref_identity_public_curve25519";
+  private static final String IDENTITY_PRIVATE_KEY_CIPHERTEXT_LEGACY_PREF = "pref_identity_private_curve25519";
+
+  private static final String IDENTITY_PUBLIC_KEY_PREF                    = "pref_identity_public_v3";
+  private static final String IDENTITY_PRIVATE_KEY_PREF                   = "pref_identity_private_v3";
+
   public static boolean hasIdentityKey(Context context) {
     SharedPreferences preferences = context.getSharedPreferences(MasterSecretUtil.PREFERENCES_NAME, 0);
-    return preferences.contains(IDENTITY_PUBLIC_KEY_PREF) && preferences.contains(IDENTITY_PRIVATE_KEY_PREF);
+
+    return
+        preferences.contains(IDENTITY_PUBLIC_KEY_PREF) &&
+        preferences.contains(IDENTITY_PRIVATE_KEY_PREF);
   }
-	
-  public static IdentityKey getIdentityKey(Context context) {
-    if (!hasIdentityKey(context)) return null;
-		
+
+  public static @NonNull IdentityKey getIdentityKey(@NonNull Context context) {
+    if (!hasIdentityKey(context)) throw new AssertionError("There isn't one!");
+
     try {
       byte[] publicKeyBytes = Base64.decode(retrieve(context, IDENTITY_PUBLIC_KEY_PREF));
       return new IdentityKey(publicKeyBytes, 0);
-    } catch (IOException ioe) {
-      Log.w("IdentityKeyUtil", ioe);
-      return null;
-    } catch (InvalidKeyException e) {
-      Log.w("IdentityKeyUtil", e);
-      return null;
+    } catch (IOException | InvalidKeyException e) {
+      throw new AssertionError(e);
     }
-  }
-	
-  public static String getFingerprint(Context context) {
-    if (!hasIdentityKey(context)) return null;
-		
-    IdentityKey identityKey = getIdentityKey(context);
-		
-    if (identityKey == null) return null;
-    else                     return identityKey.getFingerprint();
-  }
-	
-  public static void generateIdentityKeys(Context context, MasterSecret masterSecret) {
-    MasterCipher masterCipher       = new MasterCipher(masterSecret);
-    AsymmetricCipherKeyPair keyPair = KeyUtil.generateKeyPair();
-    IdentityKey identityKey         = new IdentityKey((ECPublicKeyParameters)keyPair.getPublic());
-    byte[] serializedPublicKey      = identityKey.serialize();
-    byte[] serializedPrivateKey     = masterCipher.encryptKey((ECPrivateKeyParameters)keyPair.getPrivate());
-		
-    save(context, IDENTITY_PUBLIC_KEY_PREF, Base64.encodeBytes(serializedPublicKey));
-    save(context, IDENTITY_PRIVATE_KEY_PREF, Base64.encodeBytes(serializedPrivateKey));
-  }
-	
-  public static IdentityKey verifySignedKeyExchange(byte[] keyExchangeBytes) throws InvalidKeyException {
-    try {
-      byte[] messageBytes   = new byte[1 + PublicKey.KEY_SIZE];
-      System.arraycopy(keyExchangeBytes, 0, messageBytes, 0, messageBytes.length);
-			
-      byte[] publicKeyBytes = new byte[IdentityKey.SIZE];
-      System.arraycopy(keyExchangeBytes, messageBytes.length, publicKeyBytes, 0, publicKeyBytes.length);
-			
-      int signatureLength   = Conversions.byteArrayToShort(keyExchangeBytes, messageBytes.length + publicKeyBytes.length);
-      byte[] signatureBytes = new byte[signatureLength];		
-      System.arraycopy(keyExchangeBytes, messageBytes.length + publicKeyBytes.length + 2, signatureBytes, 0, signatureBytes.length);
-			
-      byte[] messageHash      = getMessageHash(messageBytes, publicKeyBytes);
-      IdentityKey identityKey = new IdentityKey(publicKeyBytes, 0);
-      ECDSASigner verifier    = new ECDSASigner();
-			
-      verifier.init(false, identityKey.getPublicKeyParameters());
-			
-      ASN1Sequence sequence          = (ASN1Sequence)ASN1Object.fromByteArray(signatureBytes);
-      BigInteger[] signatureIntegers = new BigInteger[]{
-          ((DERInteger)sequence.getObjectAt(0)).getValue(),
-          ((DERInteger)sequence.getObjectAt(1)).getValue()
-      };
-		
-      if (!verifier.verifySignature(messageHash, signatureIntegers[0], signatureIntegers[1]))
-        throw new InvalidKeyException("Invalid signature!");
-      else
-        return identityKey;
-				
-    } catch (IOException ioe) {
-      throw new InvalidKeyException(ioe);
-    }
-		
   }
 
-  public static byte[] getSignedKeyExchange(Context context, MasterSecret masterSecret, byte[] keyExchangeBytes) {
+  public static @NonNull IdentityKeyPair getIdentityKeyPair(@NonNull Context context) {
+    if (!hasIdentityKey(context)) throw new AssertionError("There isn't one!");
+
     try {
-	
-      MasterCipher masterCipher         = new MasterCipher(masterSecret);
-      byte[] publicKeyBytes             = getIdentityKey(context).serialize();
-      byte[] messageHash                = getMessageHash(keyExchangeBytes, publicKeyBytes);
-      byte[] privateKeyBytes            = Base64.decode(retrieve(context, IDENTITY_PRIVATE_KEY_PREF));
-      ECPrivateKeyParameters privateKey = masterCipher.decryptKey(privateKeyBytes);
-      ECDSASigner signer                = new ECDSASigner();
-			
-      signer.init(true, privateKey);
-			
-      BigInteger[] messageSignatureInts    = signer.generateSignature(messageHash);
-      DERInteger[] derMessageSignatureInts = new DERInteger[]{ new DERInteger(messageSignatureInts[0]), new DERInteger(messageSignatureInts[1]) };
-      byte[] messageSignatureBytes         = new DERSequence(derMessageSignatureInts).getEncoded(ASN1Encodable.DER);
-      byte[] messageSignature              = new byte[2 + messageSignatureBytes.length];
-	        
-      Conversions.shortToByteArray(messageSignature, 0, messageSignatureBytes.length);	        
-      System.arraycopy(messageSignatureBytes, 0, messageSignature, 2, messageSignatureBytes.length);
-	        
-      byte[] combined = Combiner.combine(keyExchangeBytes, publicKeyBytes, messageSignature);
- 	        
-      return combined;
-    } catch (IOException ioe) {
-      throw new AssertionError(ioe);
+      IdentityKey  publicKey  = getIdentityKey(context);
+      ECPrivateKey privateKey = Curve.decodePrivatePoint(Base64.decode(retrieve(context, IDENTITY_PRIVATE_KEY_PREF)));
+
+      return new IdentityKeyPair(publicKey, privateKey);
+    } catch (IOException e) {
+      throw new AssertionError(e);
     }
   }
-	
-  private static byte[] getMessageHash(byte[] messageBytes, byte[] publicKeyBytes) {
-    try {
-      MessageDigest md = MessageDigest.getInstance("SHA1");
-      md.update(messageBytes);
-      return md.digest(publicKeyBytes);
-    } catch (NoSuchAlgorithmException nsae) {
-      throw new AssertionError(nsae);
+
+  public static void generateIdentityKeys(Context context) {
+    ECKeyPair    djbKeyPair     = Curve.generateKeyPair();
+    IdentityKey  djbIdentityKey = new IdentityKey(djbKeyPair.getPublicKey());
+    ECPrivateKey djbPrivateKey  = djbKeyPair.getPrivateKey();
+
+    save(context, IDENTITY_PUBLIC_KEY_PREF, Base64.encodeBytes(djbIdentityKey.serialize()));
+    save(context, IDENTITY_PRIVATE_KEY_PREF, Base64.encodeBytes(djbPrivateKey.serialize()));
+  }
+
+  public static void migrateIdentityKeys(@NonNull Context context,
+                                         @NonNull MasterSecret masterSecret)
+  {
+    if (!hasIdentityKey(context)) {
+      if (hasLegacyIdentityKeys(context)) {
+        IdentityKeyPair legacyPair = getLegacyIdentityKeyPair(context, masterSecret);
+
+        save(context, IDENTITY_PUBLIC_KEY_PREF, Base64.encodeBytes(legacyPair.getPublicKey().serialize()));
+        save(context, IDENTITY_PRIVATE_KEY_PREF, Base64.encodeBytes(legacyPair.getPrivateKey().serialize()));
+
+        delete(context, IDENTITY_PUBLIC_KEY_CIPHERTEXT_LEGACY_PREF);
+        delete(context, IDENTITY_PRIVATE_KEY_CIPHERTEXT_LEGACY_PREF);
+      } else {
+        generateIdentityKeys(context);
+      }
     }
   }
-	
-  public static String retrieve(Context context, String key) {
+
+  private static boolean hasLegacyIdentityKeys(Context context) {
+    return
+        retrieve(context, IDENTITY_PUBLIC_KEY_CIPHERTEXT_LEGACY_PREF) != null &&
+        retrieve(context, IDENTITY_PRIVATE_KEY_CIPHERTEXT_LEGACY_PREF) != null;
+  }
+
+  private static IdentityKeyPair getLegacyIdentityKeyPair(@NonNull Context context,
+                                                          @NonNull MasterSecret masterSecret)
+  {
+    try {
+      MasterCipher masterCipher   = new MasterCipher(masterSecret);
+      byte[]       publicKeyBytes = Base64.decode(retrieve(context, IDENTITY_PUBLIC_KEY_CIPHERTEXT_LEGACY_PREF));
+      IdentityKey  identityKey    = new IdentityKey(publicKeyBytes, 0);
+      ECPrivateKey privateKey     = masterCipher.decryptKey(Base64.decode(retrieve(context, IDENTITY_PRIVATE_KEY_CIPHERTEXT_LEGACY_PREF)));
+
+      return new IdentityKeyPair(identityKey, privateKey);
+    } catch (IOException | InvalidKeyException e) {
+      throw new AssertionError(e);
+    }
+  }
+
+  private static String retrieve(Context context, String key) {
     SharedPreferences preferences = context.getSharedPreferences(MasterSecretUtil.PREFERENCES_NAME, 0);
     return preferences.getString(key, null);
   }
-	
-  public static void save(Context context, String key, String value) {
+
+  private static void save(Context context, String key, String value) {
     SharedPreferences preferences   = context.getSharedPreferences(MasterSecretUtil.PREFERENCES_NAME, 0);
     Editor preferencesEditor        = preferences.edit();
-		
+
     preferencesEditor.putString(key, value);
-    preferencesEditor.commit();
+    if (!preferencesEditor.commit()) throw new AssertionError("failed to save identity key/value to shared preferences");
   }
+
+  private static void delete(Context context, String key) {
+    context.getSharedPreferences(MasterSecretUtil.PREFERENCES_NAME, 0).edit().remove(key).commit();
+  }
+
 }

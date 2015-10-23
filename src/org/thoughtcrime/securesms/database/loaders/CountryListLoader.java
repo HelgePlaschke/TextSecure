@@ -13,7 +13,7 @@ import android.support.v4.content.AsyncTaskLoader;
 
 
 import com.google.i18n.phonenumbers.PhoneNumberUtil;
-import org.thoughtcrime.securesms.util.PhoneNumberFormatter;
+import org.whispersystems.textsecure.api.util.PhoneNumberFormatter;
 
 public class CountryListLoader extends AsyncTaskLoader<ArrayList<Map<String, String>>> {
 
@@ -38,7 +38,7 @@ public class CountryListLoader extends AsyncTaskLoader<ArrayList<Map<String, Str
     return results;
   }
 
-  private class RegionComparator implements Comparator<Map<String, String>> {
+  private static class RegionComparator implements Comparator<Map<String, String>> {
     @Override
     public int compare(Map<String, String> lhs, Map<String, String> rhs) {
       return lhs.get("country_name").compareTo(rhs.get("country_name"));

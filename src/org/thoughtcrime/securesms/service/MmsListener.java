@@ -20,54 +20,53 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
-import android.preference.PreferenceManager;
+import android.provider.Telephony;
 import android.util.Log;
 
-import org.thoughtcrime.securesms.ApplicationPreferencesActivity;
-import org.thoughtcrime.securesms.protocol.WirePrefix;
-
-import ws.com.google.android.mms.pdu.GenericPdu;
-import ws.com.google.android.mms.pdu.NotificationInd;
-import ws.com.google.android.mms.pdu.PduHeaders;
-import ws.com.google.android.mms.pdu.PduParser;
+import org.thoughtcrime.securesms.ApplicationContext;
+import org.thoughtcrime.securesms.jobs.MmsReceiveJob;
+import org.thoughtcrime.securesms.util.TextSecurePreferences;
+import org.thoughtcrime.securesms.util.Util;
 
 public class MmsListener extends BroadcastReceiver {
 
-  private boolean isRelevent(Context context, Intent intent) {
-    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.DONUT)
-      return false;
+  private static final String TAG = MmsListener.class.getSimpleName();
 
-    if (!ApplicationMigrationService.isDatabaseImported(context))
+  private boolean isRelevant(Context context, Intent intent) {
+    if (!ApplicationMigrationService.isDatabaseImported(context)) {
       return false;
+    }
 
-    if (PreferenceManager.getDefaultSharedPreferences(context).getBoolean(ApplicationPreferencesActivity.ALL_MMS_PERF, true))
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT &&
+        Telephony.Sms.Intents.WAP_PUSH_RECEIVED_ACTION.equals(intent.getAction()) &&
+        Util.isDefaultSmsProvider(context))
+    {
+      return false;
+    }
+
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT &&
+        TextSecurePreferences.isInterceptAllMmsEnabled(context))
+    {
       return true;
+    }
 
-    byte[] mmsData   = intent.getByteArrayExtra("data");
-    PduParser parser = new PduParser(mmsData);
-    GenericPdu pdu   = parser.parse();
-
-    if (pdu.getMessageType() != PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND)
-      return false;
-
-    NotificationInd notificationPdu = (NotificationInd)pdu;
-
-    if (notificationPdu.getSubject() == null)
-      return false;
-
-    return WirePrefix.isEncryptedMmsSubject(notificationPdu.getSubject().getString());
+    return false;
   }
 
   @Override
     public void onReceive(Context context, Intent intent) {
-    Log.w("MmsListener", "Got MMS broadcast...");
+    Log.w(TAG, "Got MMS broadcast..." + intent.getAction());
 
-    if (isRelevent(context, intent)) {
-      intent.setAction(SendReceiveService.RECEIVE_MMS_ACTION);
-      intent.putExtra("ResultCode", this.getResultCode());
-      intent.setClass(context, SendReceiveService.class);
+    if ((Telephony.Sms.Intents.WAP_PUSH_DELIVER_ACTION.equals(intent.getAction())  &&
+        Util.isDefaultSmsProvider(context))                                        ||
+        (Telephony.Sms.Intents.WAP_PUSH_RECEIVED_ACTION.equals(intent.getAction()) &&
+         isRelevant(context, intent)))
+    {
+      Log.w(TAG, "Relevant!");
+      ApplicationContext.getInstance(context)
+                        .getJobManager()
+                        .add(new MmsReceiveJob(context, intent.getByteArrayExtra("data")));
 
-      context.startService(intent);
       abortBroadcast();
     }
   }

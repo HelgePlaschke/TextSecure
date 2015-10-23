@@ -19,9 +19,8 @@ package org.thoughtcrime.securesms.crypto;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-import org.bouncycastle.util.Arrays;
-
 import javax.crypto.spec.SecretKeySpec;
+import java.util.Arrays;
 
 /**
  * When a user first initializes TextSecure, a few secrets
@@ -72,7 +71,7 @@ public class MasterSecret implements Parcelable {
     this.macKey        = new SecretKeySpec(macKeyBytes, "HmacSHA1");
 
     // SecretKeySpec does an internal copy in its constructor.
-    Arrays.fill(encryptionKeyBytes, (byte)0x00);
+    Arrays.fill(encryptionKeyBytes, (byte) 0x00);
     Arrays.fill(macKeyBytes, (byte)0x00);
   }
 

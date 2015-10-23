@@ -1,5 +1,6 @@
 /** 
  * Copyright (C) 2011 Whisper Systems
+ * Copyright (C) 2013 Open Whisper Systems
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,8 +17,16 @@
  */
 package org.thoughtcrime.securesms.crypto;
 
+import android.support.annotation.NonNull;
+import android.util.Log;
+
+import org.thoughtcrime.securesms.util.Base64;
+import org.thoughtcrime.securesms.util.Hex;
+import org.whispersystems.libaxolotl.InvalidMessageException;
+import org.whispersystems.libaxolotl.ecc.Curve;
+import org.whispersystems.libaxolotl.ecc.ECPrivateKey;
+
 import java.io.IOException;
-import java.math.BigInteger;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -31,13 +40,6 @@ import javax.crypto.Mac;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-
-import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
-import org.thoughtcrime.securesms.util.Base64;
-import org.thoughtcrime.securesms.util.Hex;
-import org.thoughtcrime.securesms.util.InvalidMessageException;
-
-import android.util.Log;
 
 /**
  * Class that handles encryption for local storage.
@@ -64,19 +66,15 @@ public class MasterCipher {
       this.encryptingCipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
       this.decryptingCipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
       this.hmac             = Mac.getInstance("HmacSHA1");
-    } catch (NoSuchPaddingException nspe) {
+    } catch (NoSuchPaddingException | NoSuchAlgorithmException nspe) {
       throw new AssertionError(nspe);
-    } catch (NoSuchAlgorithmException e) {
-      throw new AssertionError(e);
     }
   }
-	
-  public byte[] encryptKey(ECPrivateKeyParameters params) {
-    BigInteger d  = params.getD();
-    byte[] dBytes = d.toByteArray();
-    return encryptBytes(dBytes);
+
+  public byte[] encryptKey(ECPrivateKey privateKey) {
+    return encryptBytes(privateKey.serialize());
   }
-	
+
   public String encryptBody(String body)  {
     return encryptAndEncodeBytes(body.getBytes());
   }
@@ -85,17 +83,17 @@ public class MasterCipher {
     return new String(decodeAndDecryptBytes(body));
   }
 	
-  public ECPrivateKeyParameters decryptKey(byte[] key) {
+  public ECPrivateKey decryptKey(byte[] key)
+      throws org.whispersystems.libaxolotl.InvalidKeyException
+  {
     try {
-      BigInteger d = new BigInteger(decryptBytes(key));
-      return new ECPrivateKeyParameters(d, KeyUtil.domainParameters);
+      return Curve.decodePrivatePoint(decryptBytes(key));
     } catch (InvalidMessageException ime) {
-      Log.w("bodycipher", ime);
-      return null; // XXX
+      throw new org.whispersystems.libaxolotl.InvalidKeyException(ime);
     }
   }
 	
-  public byte[] decryptBytes(byte[] decodedBody) throws InvalidMessageException {
+  public byte[] decryptBytes(@NonNull byte[] decodedBody) throws InvalidMessageException {
     try {
       Mac mac              = getMac(masterSecret.getMacKey());
       byte[] encryptedBody = verifyMacBody(mac, decodedBody);
@@ -106,7 +104,7 @@ public class MasterCipher {
       return encrypted;
     } catch (GeneralSecurityException ge) {
       throw new InvalidMessageException(ge);
-    }		
+    }
   }
 	
   public byte[] encryptBytes(byte[] body) {
@@ -156,7 +154,11 @@ public class MasterCipher {
     return Base64.encodeBytes(encryptedAndMacBody);
   }
 	
-  private byte[] verifyMacBody(Mac hmac, byte[] encryptedAndMac) throws InvalidMessageException {		
+  private byte[] verifyMacBody(@NonNull Mac hmac, @NonNull byte[] encryptedAndMac) throws InvalidMessageException {
+    if (encryptedAndMac.length < hmac.getMacLength()) {
+      throw new InvalidMessageException("length(encrypted body + MAC) < length(MAC)");
+    }
+
     byte[] encrypted = new byte[encryptedAndMac.length - hmac.getMacLength()];
     System.arraycopy(encryptedAndMac, 0, encrypted, 0, encrypted.length);
 		

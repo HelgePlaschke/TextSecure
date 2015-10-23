@@ -1,5 +1,6 @@
 /** 
  * Copyright (C) 2011 Whisper Systems
+ * Copyright (C) 2013 Open Whisper Systems
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,7 +17,8 @@
  */
 package org.thoughtcrime.securesms.crypto;
 
-import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
+import org.whispersystems.libaxolotl.ecc.ECPrivateKey;
+import org.whispersystems.libaxolotl.ecc.ECPublicKey;
 
 /**
  * When a user first initializes TextSecure, a few secrets
@@ -37,19 +39,23 @@ import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 
 public class AsymmetricMasterSecret {
 
-  private final PublicKey publicKey;
-  private final ECPrivateKeyParameters privateKey;
-	
-  public AsymmetricMasterSecret(PublicKey publicKey, ECPrivateKeyParameters privateKey) {
-    this.publicKey  = publicKey;
-    this.privateKey = privateKey;
+  private final ECPublicKey djbPublicKey;
+  private final ECPrivateKey djbPrivateKey;
+
+
+  public AsymmetricMasterSecret(ECPublicKey djbPublicKey, ECPrivateKey djbPrivateKey)
+  {
+    this.djbPublicKey   = djbPublicKey;
+    this.djbPrivateKey  = djbPrivateKey;
   }
-	
-  public PublicKey getPublicKey() {
-    return publicKey;
+
+  public ECPublicKey getDjbPublicKey() {
+    return djbPublicKey;
   }
-	
-  public ECPrivateKeyParameters getPrivateKey() {
-    return privateKey;
+
+
+  public ECPrivateKey getPrivateKey() {
+    return djbPrivateKey;
   }
+
 }

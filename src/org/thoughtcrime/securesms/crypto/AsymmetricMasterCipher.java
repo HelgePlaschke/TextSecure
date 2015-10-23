@@ -1,5 +1,6 @@
 /** 
  * Copyright (C) 2011 Whisper Systems
+ * Copyright (C) 2013 Open Whisper Systems
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,19 +17,21 @@
  */
 package org.thoughtcrime.securesms.crypto;
 
+import org.thoughtcrime.securesms.util.Base64;
+import org.thoughtcrime.securesms.util.Util;
+import org.whispersystems.libaxolotl.InvalidKeyException;
+import org.whispersystems.libaxolotl.InvalidMessageException;
+import org.whispersystems.libaxolotl.ecc.Curve;
+import org.whispersystems.libaxolotl.ecc.ECKeyPair;
+import org.whispersystems.libaxolotl.ecc.ECPrivateKey;
+import org.whispersystems.libaxolotl.ecc.ECPublicKey;
+import org.thoughtcrime.securesms.util.Conversions;
+
 import java.io.IOException;
-import java.math.BigInteger;
 import java.security.NoSuchAlgorithmException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-
-import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
-import org.bouncycastle.crypto.agreement.ECDHBasicAgreement;
-import org.bouncycastle.crypto.params.ECPublicKeyParameters;
-import org.thoughtcrime.securesms.util.Base64;
-import org.thoughtcrime.securesms.util.Conversions;
-import org.thoughtcrime.securesms.util.InvalidMessageException;
 
 /**
  * This class is used to asymmetricly encrypt local data.  This is used in the case
@@ -53,85 +56,82 @@ import org.thoughtcrime.securesms.util.InvalidMessageException;
 public class AsymmetricMasterCipher {
 
   private final AsymmetricMasterSecret asymmetricMasterSecret;
-	
+
   public AsymmetricMasterCipher(AsymmetricMasterSecret asymmetricMasterSecret) {
     this.asymmetricMasterSecret = asymmetricMasterSecret;
   }
-	
-  public String decryptBody(String body) throws IOException, org.thoughtcrime.securesms.crypto.InvalidMessageException {
+
+  public byte[] encryptBytes(byte[] body) {
     try {
-      byte[] combined           = Base64.decode(body);
-      PublicKey theirPublicKey  = new PublicKey(combined, 0);
-      byte[] encryptedBodyBytes = new byte[combined.length - PublicKey.KEY_SIZE];
-      System.arraycopy(combined, PublicKey.KEY_SIZE, encryptedBodyBytes, 0, encryptedBodyBytes.length);
-			
-      ECDHBasicAgreement agreement = new ECDHBasicAgreement();
-      agreement.init(asymmetricMasterSecret.getPrivateKey());
-			
-      BigInteger secret         = KeyUtil.calculateAgreement(agreement, theirPublicKey.getKey());
-      MasterCipher masterCipher = getMasterCipherForSecret(secret);
-      byte[] decryptedBodyBytes = masterCipher.decryptBytes(encryptedBodyBytes);
-			
-      return new String(decryptedBodyBytes);
-    } catch (InvalidKeyException ike) {
-      throw new org.thoughtcrime.securesms.crypto.InvalidMessageException(ike);
-    } catch (InvalidMessageException e) {
-      throw new org.thoughtcrime.securesms.crypto.InvalidMessageException(e);
-    }		
+      ECPublicKey  theirPublic        = asymmetricMasterSecret.getDjbPublicKey();
+      ECKeyPair    ourKeyPair         = Curve.generateKeyPair();
+      byte[]       secret             = Curve.calculateAgreement(theirPublic, ourKeyPair.getPrivateKey());
+      MasterCipher masterCipher       = getMasterCipherForSecret(secret);
+      byte[]       encryptedBodyBytes = masterCipher.encryptBytes(body);
+
+      PublicKey    ourPublicKey       = new PublicKey(31337, ourKeyPair.getPublicKey());
+      byte[]       publicKeyBytes     = ourPublicKey.serialize();
+
+      return Util.combine(publicKeyBytes, encryptedBodyBytes);
+    } catch (InvalidKeyException e) {
+      throw new AssertionError(e);
+    }
   }
-	
+
+  public byte[] decryptBytes(byte[] combined) throws IOException, InvalidMessageException {
+    try {
+      byte[][]  parts          = Util.split(combined, PublicKey.KEY_SIZE, combined.length - PublicKey.KEY_SIZE);
+      PublicKey theirPublicKey = new PublicKey(parts[0], 0);
+
+      ECPrivateKey ourPrivateKey = asymmetricMasterSecret.getPrivateKey();
+      byte[]       secret        = Curve.calculateAgreement(theirPublicKey.getKey(), ourPrivateKey);
+      MasterCipher masterCipher  = getMasterCipherForSecret(secret);
+
+      return masterCipher.decryptBytes(parts[1]);
+    } catch (InvalidKeyException e) {
+      throw new InvalidMessageException(e);
+    }
+  }
+
+  public String decryptBody(String body) throws IOException, InvalidMessageException {
+    byte[] combined = Base64.decode(body);
+    return new String(decryptBytes(combined));
+  }
+
   public String encryptBody(String body) {
-    ECDHBasicAgreement agreement    = new ECDHBasicAgreement();
-    AsymmetricCipherKeyPair keyPair = KeyUtil.generateKeyPair();
-		
-    agreement.init(keyPair.getPrivate());
-		
-    BigInteger secret         = KeyUtil.calculateAgreement(agreement, asymmetricMasterSecret.getPublicKey().getKey());
-    MasterCipher masterCipher = getMasterCipherForSecret(secret);
-    byte[] encryptedBodyBytes = masterCipher.encryptBytes(body.getBytes());
-    PublicKey publicKey       = new PublicKey(31337, (ECPublicKeyParameters)keyPair.getPublic());
-    byte[] publicKeyBytes     = publicKey.serialize();
-    byte[] combined           = new byte[publicKeyBytes.length + encryptedBodyBytes.length];
-		
-    System.arraycopy(publicKeyBytes, 0, combined, 0, publicKeyBytes.length);
-    System.arraycopy(encryptedBodyBytes, 0, combined, publicKeyBytes.length, encryptedBodyBytes.length);
-		
-    return Base64.encodeBytes(combined);
+    return Base64.encodeBytes(encryptBytes(body.getBytes()));
   }
-	
-  private MasterCipher getMasterCipherForSecret(BigInteger secret) {
-    byte[] secretBytes        = secret.toByteArray();
+
+  private MasterCipher getMasterCipherForSecret(byte[] secretBytes) {
     SecretKeySpec cipherKey   = deriveCipherKey(secretBytes);
     SecretKeySpec macKey      = deriveMacKey(secretBytes);
     MasterSecret masterSecret = new MasterSecret(cipherKey, macKey);
 
-    return new MasterCipher(masterSecret);		
+    return new MasterCipher(masterSecret);
   }
-	
+
   private SecretKeySpec deriveMacKey(byte[] secretBytes) {
     byte[] digestedBytes = getDigestedBytes(secretBytes, 1);
     byte[] macKeyBytes   = new byte[20];
-		
+
     System.arraycopy(digestedBytes, 0, macKeyBytes, 0, macKeyBytes.length);
     return new SecretKeySpec(macKeyBytes, "HmacSHA1");
   }
-	
+
   private SecretKeySpec deriveCipherKey(byte[] secretBytes) {
     byte[] digestedBytes  = getDigestedBytes(secretBytes, 0);
     byte[] cipherKeyBytes = new byte[16];
-		
-    System.arraycopy(digestedBytes, 0, cipherKeyBytes, 0, cipherKeyBytes.length);		
+
+    System.arraycopy(digestedBytes, 0, cipherKeyBytes, 0, cipherKeyBytes.length);
     return new SecretKeySpec(cipherKeyBytes, "AES");
   }
-	
+
   private byte[] getDigestedBytes(byte[] secretBytes, int iteration) {
     try {
       Mac mac = Mac.getInstance("HmacSHA256");
       mac.init(new SecretKeySpec(secretBytes, "HmacSHA256"));
       return mac.doFinal(Conversions.intToByteArray(iteration));
-    } catch (NoSuchAlgorithmException e) {
-      throw new AssertionError(e);
-    } catch (java.security.InvalidKeyException e) {
+    } catch (NoSuchAlgorithmException | java.security.InvalidKeyException e) {
       throw new AssertionError(e);
     }
   }

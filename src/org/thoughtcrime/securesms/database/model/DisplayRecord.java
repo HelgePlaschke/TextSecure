@@ -36,22 +36,21 @@ public abstract class DisplayRecord {
   protected final long type;
 
   private final Recipients recipients;
-  private final long dateSent;
-  private final long dateReceived;
-  private final long threadId;
-  private final Body body;
-//  private final String body;
+  private final long       dateSent;
+  private final long       dateReceived;
+  private final long       threadId;
+  private final Body       body;
 
   public DisplayRecord(Context context, Body body, Recipients recipients, long dateSent,
                        long dateReceived, long threadId, long type)
   {
-    this.context      = context.getApplicationContext();
-    this.threadId     = threadId;
-    this.recipients   = recipients;
-    this.dateSent     = dateSent;
-    this.dateReceived = dateReceived;
-    this.type         = type;
-    this.body         = body;
+    this.context              = context.getApplicationContext();
+    this.threadId             = threadId;
+    this.recipients           = recipients;
+    this.dateSent             = dateSent;
+    this.dateReceived         = dateReceived;
+    this.type                 = type;
+    this.body                 = body;
   }
 
   public Body getBody() {
@@ -78,6 +77,38 @@ public abstract class DisplayRecord {
 
   public boolean isKeyExchange() {
     return SmsDatabase.Types.isKeyExchangeType(type);
+  }
+
+  public boolean isEndSession() {
+    return SmsDatabase.Types.isEndSessionType(type);
+  }
+
+  public boolean isGroupUpdate() {
+    return SmsDatabase.Types.isGroupUpdate(type);
+  }
+
+  public boolean isGroupQuit() {
+    return SmsDatabase.Types.isGroupQuit(type);
+  }
+
+  public boolean isGroupAction() {
+    return isGroupUpdate() || isGroupQuit();
+  }
+
+  public boolean isCallLog() {
+    return SmsDatabase.Types.isCallLog(type);
+  }
+
+  public boolean isIncomingCall() {
+    return SmsDatabase.Types.isIncomingCall(type);
+  }
+
+  public boolean isOutgoingCall() {
+    return SmsDatabase.Types.isOutgoingCall(type);
+  }
+
+  public boolean isMissedCall() {
+    return SmsDatabase.Types.isMissedCall(type);
   }
 
   public static class Body {

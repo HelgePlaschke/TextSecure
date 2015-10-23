@@ -16,68 +16,46 @@
  */
 package org.thoughtcrime.securesms.mms;
 
-import java.io.IOException;
+import android.content.Context;
+import android.content.res.Resources.Theme;
+import android.net.Uri;
+import android.support.annotation.DrawableRes;
+import android.support.annotation.NonNull;
 
 import org.thoughtcrime.securesms.R;
+import org.thoughtcrime.securesms.util.ResUtil;
 
+import java.io.IOException;
+
+import ws.com.google.android.mms.ContentType;
 import ws.com.google.android.mms.pdu.PduPart;
-import android.content.Context;
-import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.net.Uri;
-import android.provider.MediaStore.Audio;
-import android.widget.ImageView;
 
 public class AudioSlide extends Slide {
+
+  public AudioSlide(Context context, Uri uri, long dataSize) throws IOException {
+    super(context, constructPartFromUri(context, uri, ContentType.AUDIO_UNSPECIFIED, dataSize));
+  }
 
   public AudioSlide(Context context, PduPart part) {
     super(context, part);
   }
 
-  public AudioSlide(Context context, Uri uri) throws IOException, MediaTooLargeException {
-    super(context, constructPartFromUri(context, uri));
-  }
-	
   @Override
-    public boolean hasImage() {
+  public boolean hasImage() {
     return true;
   }
-	
+
   @Override
-    public boolean hasAudio() {
+  public boolean hasAudio() {
     return true;
   }
-	
+
+  @NonNull @Override public String getContentDescription() {
+    return context.getString(R.string.Slide_audio);
+  }
+
   @Override
-  public Bitmap getThumbnail(int maxWidth, int maxHeight) {
-    return BitmapFactory.decodeResource(context.getResources(), R.drawable.ic_menu_add_sound);
+  public @DrawableRes int getPlaceholderRes(Theme theme) {
+    return ResUtil.getDrawableRes(theme, R.attr.conversation_icon_attach_audio);
   }
-
-  public static PduPart constructPartFromUri(Context context, Uri uri) throws IOException, MediaTooLargeException {
-    PduPart part = new PduPart();
-		
-    if (getMediaSize(context, uri) > MAX_MESSAGE_SIZE)
-      throw new MediaTooLargeException("Audio track larger than size maximum.");
-		
-    Cursor cursor = null;
-		
-    try {
-      cursor = context.getContentResolver().query(uri, new String[]{Audio.Media.MIME_TYPE}, null, null, null);
-			
-      if (cursor != null && cursor.moveToFirst())
-	part.setContentType(cursor.getString(0).getBytes());
-      else
-	throw new IOException("Unable to query content type.");
-    } finally {
-      cursor.close();
-    } 
-
-    part.setDataUri(uri);
-    part.setContentId((System.currentTimeMillis()+"").getBytes());
-    part.setName(("Audio" + System.currentTimeMillis()).getBytes());
-		
-    return part;
-  }
-	
 }

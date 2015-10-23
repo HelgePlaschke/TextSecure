@@ -16,69 +16,46 @@
  */
 package org.thoughtcrime.securesms.mms;
 
-import java.io.IOException;
+import android.content.Context;
+import android.content.res.Resources.Theme;
+import android.net.Uri;
+import android.support.annotation.DrawableRes;
+import android.support.annotation.NonNull;
 
 import org.thoughtcrime.securesms.R;
+import org.thoughtcrime.securesms.util.ResUtil;
 
+import java.io.IOException;
+
+import ws.com.google.android.mms.ContentType;
 import ws.com.google.android.mms.pdu.PduPart;
-import android.content.ContentResolver;
-import android.content.Context;
-import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.net.Uri;
-import android.provider.MediaStore;
-import android.util.Log;
-import android.widget.ImageView;
 
 public class VideoSlide extends Slide {
+
+  public VideoSlide(Context context, Uri uri, long dataSize) throws IOException {
+    super(context, constructPartFromUri(context, uri, ContentType.VIDEO_UNSPECIFIED, dataSize));
+  }
 
   public VideoSlide(Context context, PduPart part) {
     super(context, part);
   }
 
-  public VideoSlide(Context context, Uri uri) throws IOException, MediaTooLargeException {
-    super(context, constructPartFromUri(context, uri));
-  }
-	
   @Override
-  public Bitmap getThumbnail(int width, int height) {
-    return BitmapFactory.decodeResource(context.getResources(), R.drawable.ic_launcher_video_player);
+  public @DrawableRes int getPlaceholderRes(Theme theme) {
+    return ResUtil.getDrawableRes(theme, R.attr.conversation_icon_attach_video);
   }
 
   @Override
   public boolean hasImage() {
     return true;
   }
-	
+
   @Override
   public boolean hasVideo() {
     return true;
   }
-	
-  private static PduPart constructPartFromUri(Context context, Uri uri) throws IOException, MediaTooLargeException {
-    PduPart part             = new PduPart();
-    ContentResolver resolver = context.getContentResolver();
-    Cursor cursor            = null;
-		
-    try {
-      cursor = resolver.query(uri, new String[] {MediaStore.Video.Media.MIME_TYPE}, null, null, null);
-      if (cursor != null && cursor.moveToFirst()) {
-        Log.w("VideoSlide", "Setting mime type: " + cursor.getString(0));
-        part.setContentType(cursor.getString(0).getBytes());
-      }
-    } finally {
-      if (cursor != null)
-        cursor.close();
-    }
-		
-    if (getMediaSize(context, uri) > MAX_MESSAGE_SIZE)
-      throw new MediaTooLargeException("Video exceeds maximum message size.");
-		
-    part.setDataUri(uri);
-    part.setContentId((System.currentTimeMillis()+"").getBytes());
-    part.setName(("Video" + System.currentTimeMillis()).getBytes());
-		
-    return part;
+
+  @NonNull @Override public String getContentDescription() {
+    return context.getString(R.string.Slide_video);
   }
 }

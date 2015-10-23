@@ -16,8 +16,10 @@
  */
 package org.thoughtcrime.securesms;
 
+import android.os.AsyncTask;
+import android.content.Context;
+import android.util.Log;
 import android.os.Bundle;
-import android.preference.PreferenceManager;
 import android.text.Editable;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -29,7 +31,7 @@ import android.widget.Toast;
 import org.thoughtcrime.securesms.crypto.InvalidPassphraseException;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.crypto.MasterSecretUtil;
-import org.thoughtcrime.securesms.util.MemoryCleaner;
+import org.thoughtcrime.securesms.util.TextSecurePreferences;
 
 /**
  * Activity for changing a user's local encryption passphrase.
@@ -67,7 +69,7 @@ public class PassphraseChangeActivity extends PassphraseActivity {
     this.okButton.setOnClickListener(new OkButtonClickListener());
     this.cancelButton.setOnClickListener(new CancelButtonClickListener());
 
-    if (isPassphraseDisabled()) {
+    if (TextSecurePreferences.isPasswordDisabled(this)) {
       this.originalPassphrase.setVisibility(View.GONE);
       this.originalPassphraseLabel.setVisibility(View.GONE);
     } else {
@@ -85,41 +87,23 @@ public class PassphraseChangeActivity extends PassphraseActivity {
     String passphrase       = (newText == null ? "" : newText.toString());
     String passphraseRepeat = (repeatText == null ? "" : repeatText.toString());
 
-    if (isPassphraseDisabled()) {
+    if (TextSecurePreferences.isPasswordDisabled(this)) {
       original = MasterSecretUtil.UNENCRYPTED_PASSPHRASE;
     }
 
-    try {
-      if (!passphrase.equals(passphraseRepeat)) {
-        Toast.makeText(getApplicationContext(),
-                       R.string.PassphraseChangeActivity_passphrases_dont_match_exclamation,
-                       Toast.LENGTH_SHORT).show();
-        this.newPassphrase.setText("");
-        this.repeatPassphrase.setText("");
-      } else {
-        MasterSecret masterSecret = MasterSecretUtil.changeMasterSecretPassphrase(this, original, passphrase);
-
-        PreferenceManager.getDefaultSharedPreferences(this)
-                         .edit()
-                         .putBoolean(ApplicationPreferencesActivity.DISABLE_PASSPHRASE_PREF, false)
-                         .commit();
-
-        MemoryCleaner.clean(original);
-        MemoryCleaner.clean(passphrase);
-        MemoryCleaner.clean(passphraseRepeat);
-
-        setMasterSecret(masterSecret);
-      }
-    } catch (InvalidPassphraseException e) {
-      Toast.makeText(this, R.string.PassphraseChangeActivity_incorrect_old_passphrase_exclamation,
-                     Toast.LENGTH_LONG).show();
-      this.originalPassphrase.setText("");
+    if (!passphrase.equals(passphraseRepeat)) {
+      Toast.makeText(getApplicationContext(),
+                     R.string.PassphraseChangeActivity_passphrases_dont_match_exclamation,
+                     Toast.LENGTH_SHORT).show();
+      this.newPassphrase.setText("");
+      this.repeatPassphrase.setText("");
+    } else if (passphrase.equals("")) {
+      Toast.makeText(getApplicationContext(),
+                     R.string.PassphraseChangeActivity_enter_new_passphrase_exclamation,
+                     Toast.LENGTH_SHORT).show();
+    } else {
+      new ChangePassphraseTask(this).execute(original, passphrase);
     }
-  }
-
-  private boolean isPassphraseDisabled() {
-    return PreferenceManager.getDefaultSharedPreferences(this)
-                            .getBoolean(ApplicationPreferencesActivity.DISABLE_PASSPHRASE_PREF, false);
   }
 
   private class CancelButtonClickListener implements OnClickListener {
@@ -131,6 +115,46 @@ public class PassphraseChangeActivity extends PassphraseActivity {
   private class OkButtonClickListener implements OnClickListener {
     public void onClick(View v) {
       verifyAndSavePassphrases();
+    }
+  }
+
+  private class ChangePassphraseTask extends AsyncTask<String, Void, MasterSecret> {
+    private final Context context;
+
+    public ChangePassphraseTask(Context context) {
+      this.context = context;
+    }
+
+    @Override
+    protected void onPreExecute() {
+      okButton.setEnabled(false);
+    }
+
+    @Override
+    protected MasterSecret doInBackground(String... params) {
+      try {
+        MasterSecret masterSecret = MasterSecretUtil.changeMasterSecretPassphrase(context, params[0], params[1]);
+        TextSecurePreferences.setPasswordDisabled(context, false);
+
+        return masterSecret;
+
+      } catch (InvalidPassphraseException e) {
+        Log.w(PassphraseChangeActivity.class.getSimpleName(), e);
+        return null;
+      }
+    }
+
+    @Override
+    protected void onPostExecute(MasterSecret masterSecret) {
+      okButton.setEnabled(true);
+
+      if (masterSecret != null) {
+        setMasterSecret(masterSecret);
+      } else {
+        Toast.makeText(context, R.string.PassphraseChangeActivity_incorrect_old_passphrase_exclamation,
+                       Toast.LENGTH_LONG).show();
+        originalPassphrase.setText("");
+      }
     }
   }
 

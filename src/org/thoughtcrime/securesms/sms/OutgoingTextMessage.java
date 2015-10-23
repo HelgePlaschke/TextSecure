@@ -1,17 +1,12 @@
 package org.thoughtcrime.securesms.sms;
 
 import org.thoughtcrime.securesms.database.model.SmsMessageRecord;
-import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.recipients.Recipients;
 
 public class OutgoingTextMessage {
 
   private final Recipients recipients;
-  private       String     message;
-
-  public OutgoingTextMessage(Recipient recipient, String message) {
-    this(new Recipients(recipient), message);
-  }
+  private final String     message;
 
   public OutgoingTextMessage(Recipients recipients, String message) {
     this.recipients = recipients;
@@ -39,13 +34,23 @@ public class OutgoingTextMessage {
     return false;
   }
 
+  public boolean isEndSession() {
+    return false;
+  }
+
+  public boolean isPreKeyBundle() {
+    return false;
+  }
+
   public static OutgoingTextMessage from(SmsMessageRecord record) {
     if (record.isSecure()) {
-      return new OutgoingEncryptedMessage(record.getIndividualRecipient(), record.getBody().getBody());
+      return new OutgoingEncryptedMessage(record.getRecipients(), record.getBody().getBody());
     } else if (record.isKeyExchange()) {
-      return new OutgoingKeyExchangeMessage(record.getIndividualRecipient(), record.getBody().getBody());
+      return new OutgoingKeyExchangeMessage(record.getRecipients(), record.getBody().getBody());
+    } else if (record.isEndSession()) {
+      return new OutgoingEndSessionMessage(new OutgoingTextMessage(record.getRecipients(), record.getBody().getBody()));
     } else {
-      return new OutgoingTextMessage(record.getIndividualRecipient(), record.getBody().getBody());
+      return new OutgoingTextMessage(record.getRecipients(), record.getBody().getBody());
     }
   }
 

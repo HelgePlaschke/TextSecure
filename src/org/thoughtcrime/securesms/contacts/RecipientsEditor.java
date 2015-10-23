@@ -18,6 +18,7 @@
 package org.thoughtcrime.securesms.contacts;
 
 import android.content.Context;
+import android.support.v7.widget.AppCompatMultiAutoCompleteTextView;
 import android.telephony.PhoneNumberUtils;
 import android.text.Annotation;
 import android.text.Editable;
@@ -47,14 +48,14 @@ import java.util.List;
 /**
  * Provide UI for editing the recipients of multi-media messages.
  */
-public class RecipientsEditor extends MultiAutoCompleteTextView {
+public class RecipientsEditor extends AppCompatMultiAutoCompleteTextView {
     private int mLongPressedPosition = -1;
     private final RecipientsEditorTokenizer mTokenizer;
     private char mLastSeparator = ',';
     private Context mContext;
 
     public RecipientsEditor(Context context, AttributeSet attrs) {
-        super(context, attrs, android.R.attr.autoCompleteTextViewStyle);
+        super(context, attrs);
         mContext = context;
         mTokenizer = new RecipientsEditorTokenizer(context, this);
         setTokenizer(mTokenizer);
@@ -117,7 +118,6 @@ public class RecipientsEditor extends MultiAutoCompleteTextView {
         int len = getText().length();
 
         return end == len;
-
     }
 
     public int getRecipientCount() {
@@ -129,13 +129,7 @@ public class RecipientsEditor extends MultiAutoCompleteTextView {
     }
 
     public Recipients constructContactsFromInput() {
-    	Recipients r = null;
-        try {
-			r = RecipientFactory.getRecipientsFromString(mContext, mTokenizer.getRawString(), false);
-		} catch (RecipientFormattingException e) {
-			Log.w( "RecipientsEditor", e);
-		}
-		return r;
+      return RecipientFactory.getRecipientsFromString(mContext, mTokenizer.getRawString(), false);
     }
 
     private boolean isValidAddress(String number, boolean isMms) {
@@ -196,19 +190,19 @@ public class RecipientsEditor extends MultiAutoCompleteTextView {
     }*/
 
     public static CharSequence contactToToken(Recipient c) {
-    	String name       = c.getName();
-    	String number     = c.getNumber();
-        SpannableString s = new SpannableString(RecipientsFormatter.formatNameAndNumber(name, number));
-        int len           = s.length();
+      String name       = c.getName();
+      String number     = c.getNumber();
+      SpannableString s = new SpannableString(RecipientsFormatter.formatNameAndNumber(name, number));
+      int len           = s.length();
 
-        if (len == 0) {
-            return s;
-        }
+      if (len == 0) {
+        return s;
+      }
 
-        s.setSpan(new Annotation("number", c.getNumber()), 0, len,
+      s.setSpan(new Annotation("number", c.getNumber()), 0, len,
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
 
-        return s;
+      return s;
     }
 
     public void populate(Recipients list) {
@@ -228,7 +222,6 @@ public class RecipientsEditor extends MultiAutoCompleteTextView {
     private int pointToPosition(int x, int y) {
         x -= getCompoundPaddingLeft();
         y -= getExtendedPaddingTop();
-
 
         x += getScrollX();
         y += getScrollY();

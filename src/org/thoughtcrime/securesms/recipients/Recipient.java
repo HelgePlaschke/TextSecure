@@ -16,111 +16,124 @@
  */
 package org.thoughtcrime.securesms.recipients;
 
-import android.graphics.Bitmap;
 import android.net.Uri;
-import android.os.Parcel;
-import android.os.Parcelable;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.util.Log;
 
+import org.thoughtcrime.securesms.color.MaterialColor;
+import org.thoughtcrime.securesms.contacts.avatars.ContactColors;
+import org.thoughtcrime.securesms.contacts.avatars.ContactPhoto;
+import org.thoughtcrime.securesms.contacts.avatars.ContactPhotoFactory;
 import org.thoughtcrime.securesms.recipients.RecipientProvider.RecipientDetails;
 import org.thoughtcrime.securesms.util.FutureTaskListener;
+import org.thoughtcrime.securesms.util.GroupUtil;
 import org.thoughtcrime.securesms.util.ListenableFutureTask;
 
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.Set;
+import java.util.WeakHashMap;
 
-public class Recipient implements Parcelable {
+public class Recipient {
 
-  public static final Parcelable.Creator<Recipient> CREATOR = new Parcelable.Creator<Recipient>() {
-    public Recipient createFromParcel(Parcel in) {
-      return new Recipient(in);
-    }
+  private final static String TAG = Recipient.class.getSimpleName();
 
-    public Recipient[] newArray(int size) {
-      return new Recipient[size];
-    }
-  };
+  private final Set<RecipientModifiedListener> listeners = Collections.newSetFromMap(new WeakHashMap<RecipientModifiedListener, Boolean>());
 
-  private final String number;
-  private final HashSet<RecipientModifiedListener> listeners = new HashSet<RecipientModifiedListener>();
+  private final long recipientId;
 
-  private String name;
-  private Bitmap contactPhoto;
-  private Uri    contactUri;
+  private String  number;
+  private String  name;
+  private boolean stale;
 
-  public Recipient(String number, Bitmap contactPhoto,
-                   ListenableFutureTask<RecipientDetails> future)
+  private ContactPhoto contactPhoto;
+  private Uri          contactUri;
+
+  @Nullable private MaterialColor color;
+
+  Recipient(long recipientId,
+            @NonNull  String number,
+            @Nullable Recipient stale,
+            @NonNull  ListenableFutureTask<RecipientDetails> future)
   {
+    this.recipientId  = recipientId;
     this.number       = number;
-    this.contactPhoto = contactPhoto;
+    this.contactPhoto = ContactPhotoFactory.getLoadingPhoto();
+    this.color        = null;
 
-    future.setListener(new FutureTaskListener<RecipientDetails>() {
+    if (stale != null) {
+      this.name         = stale.name;
+      this.contactUri   = stale.contactUri;
+      this.contactPhoto = stale.contactPhoto;
+      this.color        = stale.color;
+    }
+
+    future.addListener(new FutureTaskListener<RecipientDetails>() {
       @Override
       public void onSuccess(RecipientDetails result) {
         if (result != null) {
-          HashSet<RecipientModifiedListener> localListeners;
-
           synchronized (Recipient.this) {
             Recipient.this.name         = result.name;
+            Recipient.this.number       = result.number;
             Recipient.this.contactUri   = result.contactUri;
             Recipient.this.contactPhoto = result.avatar;
-            localListeners              = (HashSet<RecipientModifiedListener>)listeners.clone();
-            listeners.clear();
+            Recipient.this.color        = result.color;
           }
 
-          for (RecipientModifiedListener listener : localListeners)
-            listener.onModified(Recipient.this);
+          notifyListeners();
         }
       }
 
       @Override
       public void onFailure(Throwable error) {
-        Log.w("Recipient", error);
+        Log.w(TAG, error);
       }
     });
   }
 
-  public Recipient(String name, String number, Uri contactUri, Bitmap contactPhoto) {
-    this.number       = number;
-    this.contactUri   = contactUri;
-    this.name         = name;
-    this.contactPhoto = contactPhoto;
-  }
-
-  public Recipient(Parcel in) {
-    this.number       = in.readString();
-    this.name         = in.readString();
-    this.contactUri   = (Uri)in.readParcelable(null);
-    this.contactPhoto = (Bitmap)in.readParcelable(null);
+  Recipient(long recipientId, RecipientDetails details) {
+    this.recipientId  = recipientId;
+    this.number       = details.number;
+    this.contactUri   = details.contactUri;
+    this.name         = details.name;
+    this.contactPhoto = details.avatar;
+    this.color        = details.color;
   }
 
   public synchronized Uri getContactUri() {
     return this.contactUri;
   }
 
-  public synchronized String getName() {
+  public synchronized @Nullable String getName() {
     return this.name;
+  }
+
+  public synchronized @NonNull MaterialColor getColor() {
+    if      (color != null) return color;
+    else if (name != null)  return ContactColors.generateFor(name);
+    else                    return ContactColors.UNKNOWN_COLOR;
+  }
+
+  public void setColor(@NonNull MaterialColor color) {
+    synchronized (this) {
+      this.color = color;
+    }
+
+    notifyListeners();
   }
 
   public String getNumber() {
     return number;
   }
 
-  public int describeContents() {
-    return 0;
+  public long getRecipientId() {
+    return recipientId;
   }
 
-//  public void updateAsynchronousContent(RecipientDetails result) {
-//    if (result != null) {
-//      Recipient.this.name.set(result.name);
-//      Recipient.this.contactUri.set(result.contactUri);
-//      Recipient.this.contactPhoto.set(result.avatar);
-//
-//      synchronized(this) {
-//        if (listener == null) asynchronousUpdateComplete = true;
-//        else                  listener.onModified(Recipient.this);
-//      }
-//    }
-//  }
+  public boolean isGroupRecipient() {
+    return GroupUtil.isEncodedGroup(number);
+  }
 
   public synchronized void addListener(RecipientModifiedListener listener) {
     listeners.add(listener);
@@ -130,22 +143,54 @@ public class Recipient implements Parcelable {
     listeners.remove(listener);
   }
 
-  public synchronized void writeToParcel(Parcel dest, int flags) {
-    dest.writeString(number);
-    dest.writeString(name);
-    dest.writeParcelable(contactUri, 0);
-    dest.writeParcelable(contactPhoto, 0);
-  }
-
   public synchronized String toShortString() {
     return (name == null ? number : name);
   }
 
-  public synchronized Bitmap getContactPhoto() {
+  public synchronized @NonNull ContactPhoto getContactPhoto() {
     return contactPhoto;
   }
 
-  public static interface RecipientModifiedListener {
+  public static Recipient getUnknownRecipient() {
+    return new Recipient(-1, new RecipientDetails("Unknown", "Unknown", null,
+                                                  ContactPhotoFactory.getDefaultContactPhoto(null), null));
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || !(o instanceof Recipient)) return false;
+
+    Recipient that = (Recipient) o;
+
+    return this.recipientId == that.recipientId;
+  }
+
+  @Override
+  public int hashCode() {
+    return 31 + (int)this.recipientId;
+  }
+
+  private void notifyListeners() {
+    Set<RecipientModifiedListener> localListeners;
+
+    synchronized (this) {
+      localListeners = new HashSet<>(listeners);
+    }
+
+    for (RecipientModifiedListener listener : localListeners)
+      listener.onModified(this);
+  }
+
+  public interface RecipientModifiedListener {
     public void onModified(Recipient recipient);
+  }
+
+  boolean isStale() {
+    return stale;
+  }
+
+  void setStale() {
+    this.stale = true;
   }
 }

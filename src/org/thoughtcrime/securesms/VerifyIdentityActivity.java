@@ -1,5 +1,6 @@
 /**
  * Copyright (C) 2011 Whisper Systems
+ * Copyright (C) 2013 Open Whisper Systems
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,16 +18,22 @@
 package org.thoughtcrime.securesms;
 
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.actionbarsherlock.view.MenuItem;
-import org.thoughtcrime.securesms.crypto.IdentityKey;
+import org.thoughtcrime.securesms.crypto.IdentityKeyParcelable;
 import org.thoughtcrime.securesms.crypto.IdentityKeyUtil;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
-import org.thoughtcrime.securesms.database.keys.SessionRecord;
+import org.thoughtcrime.securesms.crypto.storage.TextSecureSessionStore;
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.util.MemoryCleaner;
+import org.thoughtcrime.securesms.recipients.RecipientFactory;
+import org.whispersystems.libaxolotl.AxolotlAddress;
+import org.whispersystems.libaxolotl.IdentityKey;
+import org.whispersystems.libaxolotl.state.SessionRecord;
+import org.whispersystems.libaxolotl.state.SessionStore;
+import org.whispersystems.textsecure.api.push.TextSecureAddress;
 
 /**
  * Activity for verifying identity keys.
@@ -35,58 +42,48 @@ import org.thoughtcrime.securesms.util.MemoryCleaner;
  */
 public class VerifyIdentityActivity extends KeyScanningActivity {
 
-  private Recipient recipient;
+  private Recipient    recipient;
   private MasterSecret masterSecret;
 
   private TextView localIdentityFingerprint;
   private TextView remoteIdentityFingerprint;
 
   @Override
-  public void onCreate(Bundle state) {
-    super.onCreate(state);
+  protected void onCreate(Bundle state, @NonNull MasterSecret masterSecret) {
+    this.masterSecret = masterSecret;
     getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+    getSupportActionBar().setTitle(R.string.AndroidManifest__verify_identity);
+
     setContentView(R.layout.verify_identity_activity);
 
-    initializeResources();
-    initializeFingerprints();
+    this.localIdentityFingerprint  = (TextView)findViewById(R.id.you_read);
+    this.remoteIdentityFingerprint = (TextView)findViewById(R.id.friend_reads);
   }
 
   @Override
-  protected void onDestroy() {
-    MemoryCleaner.clean(masterSecret);
-    super.onDestroy();
+  public void onResume() {
+    super.onResume();
+
+    this.recipient = RecipientFactory.getRecipientForId(this, this.getIntent().getLongExtra("recipient", -1), true);
+
+    initializeFingerprints();
   }
 
-  private void initializeLocalIdentityKey() {
+  private void initializeFingerprints() {
     if (!IdentityKeyUtil.hasIdentityKey(this)) {
       localIdentityFingerprint.setText(R.string.VerifyIdentityActivity_you_do_not_have_an_identity_key);
       return;
     }
 
-    localIdentityFingerprint.setText(IdentityKeyUtil.getFingerprint(this));
-  }
+    localIdentityFingerprint.setText(IdentityKeyUtil.getIdentityKey(this).getFingerprint());
 
-  private void initializeRemoteIdentityKey() {
-    SessionRecord sessionRecord = new SessionRecord(this, masterSecret, recipient);
-    IdentityKey identityKey     = sessionRecord.getIdentityKey();
+    IdentityKey identityKey = getRemoteIdentityKey(masterSecret, recipient);
 
     if (identityKey == null) {
       remoteIdentityFingerprint.setText(R.string.VerifyIdentityActivity_recipient_has_no_identity_key);
     } else {
       remoteIdentityFingerprint.setText(identityKey.getFingerprint());
     }
-  }
-
-  private void initializeFingerprints() {
-    initializeLocalIdentityKey();
-    initializeRemoteIdentityKey();
-  }
-
-  private void initializeResources() {
-    localIdentityFingerprint  = (TextView)findViewById(R.id.you_read);
-    remoteIdentityFingerprint = (TextView)findViewById(R.id.friend_reads);
-    recipient                 = (Recipient)this.getIntent().getParcelableExtra("recipient");
-    masterSecret              = (MasterSecret)this.getIntent().getParcelableExtra("master_secret");
   }
 
   @Override
@@ -103,8 +100,7 @@ public class VerifyIdentityActivity extends KeyScanningActivity {
 
   @Override
   protected void initiateScan() {
-    SessionRecord sessionRecord = new SessionRecord(this, masterSecret, recipient);
-    IdentityKey identityKey     = sessionRecord.getIdentityKey();
+    IdentityKey identityKey = getRemoteIdentityKey(masterSecret, recipient);
 
     if (identityKey == null) {
       Toast.makeText(this, R.string.VerifyIdentityActivity_recipient_has_no_identity_key_exclamation,
@@ -126,8 +122,7 @@ public class VerifyIdentityActivity extends KeyScanningActivity {
 
   @Override
   protected IdentityKey getIdentityKeyToCompare() {
-    SessionRecord sessionRecord = new SessionRecord(this, masterSecret, recipient);
-    return sessionRecord.getIdentityKey();
+    return getRemoteIdentityKey(masterSecret, recipient);
   }
 
   @Override
@@ -153,5 +148,23 @@ public class VerifyIdentityActivity extends KeyScanningActivity {
   @Override
   protected String getVerifiedTitle() {
     return getString(R.string.VerifyIdentityActivity_verified_exclamation);
+  }
+
+  private @Nullable IdentityKey getRemoteIdentityKey(MasterSecret masterSecret, Recipient recipient) {
+    IdentityKeyParcelable identityKeyParcelable = getIntent().getParcelableExtra("remote_identity");
+
+    if (identityKeyParcelable != null) {
+      return identityKeyParcelable.get();
+    }
+
+    SessionStore   sessionStore   = new TextSecureSessionStore(this, masterSecret);
+    AxolotlAddress axolotlAddress = new AxolotlAddress(recipient.getNumber(), TextSecureAddress.DEFAULT_DEVICE_ID);
+    SessionRecord  record         = sessionStore.loadSession(axolotlAddress);
+
+    if (record == null) {
+      return null;
+    }
+
+    return record.getSessionState().getRemoteIdentityKey();
   }
 }

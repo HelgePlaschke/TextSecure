@@ -19,23 +19,27 @@ package org.thoughtcrime.securesms.database;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.MergeCursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.support.annotation.Nullable;
+import android.text.TextUtils;
 import android.util.Log;
 
+import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.crypto.MasterCipher;
-import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.database.model.DisplayRecord;
 import org.thoughtcrime.securesms.database.model.MessageRecord;
 import org.thoughtcrime.securesms.database.model.ThreadRecord;
 import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.recipients.RecipientFactory;
 import org.thoughtcrime.securesms.recipients.Recipients;
-import org.thoughtcrime.securesms.util.InvalidMessageException;
 import org.thoughtcrime.securesms.util.Util;
+import org.whispersystems.libaxolotl.InvalidMessageException;
 
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -58,8 +62,7 @@ public class ThreadDatabase extends Database {
     DATE + " INTEGER DEFAULT 0, " + MESSAGE_COUNT + " INTEGER DEFAULT 0, "                         +
     RECIPIENT_IDS + " TEXT, " + SNIPPET + " TEXT, " + SNIPPET_CHARSET + " INTEGER DEFAULT 0, "     +
     READ + " INTEGER DEFAULT 1, " + TYPE + " INTEGER DEFAULT 0, " + ERROR + " INTEGER DEFAULT 0, " +
-    SNIPPET_TYPE + " INTEGER DEFAULT 0, " +
-    HAS_ATTACHMENT + " INTEGER DEFAULT 0);";
+    SNIPPET_TYPE + " INTEGER DEFAULT 0);";
 
   public static final String[] CREATE_INDEXS = {
     "CREATE INDEX IF NOT EXISTS thread_recipient_ids_index ON " + TABLE_NAME + " (" + RECIPIENT_IDS + ");",
@@ -70,13 +73,11 @@ public class ThreadDatabase extends Database {
   }
 
   private long[] getRecipientIds(Recipients recipients) {
-    Set<Long> recipientSet = new HashSet<Long>();
+    Set<Long>       recipientSet  = new HashSet<Long>();
     List<Recipient> recipientList = recipients.getRecipientsList();
 
     for (Recipient recipient : recipientList) {
-      //  String number = NumberUtil.filterNumber(recipient.getNumber());
-      String number = recipient.getNumber();
-      recipientSet.add(Long.valueOf(DatabaseFactory.getAddressDatabase(context).getCanonicalAddress(number)));
+      recipientSet.add(recipient.getRecipientId());
     }
 
     long[] recipientArray = new long[recipientSet.size()];
@@ -117,13 +118,25 @@ public class ThreadDatabase extends Database {
     return db.insert(TABLE_NAME, null, contentValues);
   }
 
-  private void updateThread(long threadId, long count, String body, long date, long type) {
-    ContentValues contentValues = new ContentValues(3);
+  private void updateThread(long threadId, long count, String body, long date, long type)
+  {
+    ContentValues contentValues = new ContentValues(4);
     contentValues.put(DATE, date - date % 1000);
     contentValues.put(MESSAGE_COUNT, count);
     contentValues.put(SNIPPET, body);
     contentValues.put(SNIPPET_TYPE, type);
 
+    SQLiteDatabase db = databaseHelper.getWritableDatabase();
+    db.update(TABLE_NAME, contentValues, ID + " = ?", new String[] {threadId + ""});
+    notifyConversationListListeners();
+  }
+
+  public void updateSnippet(long threadId, String snippet, long date, long type) {
+    ContentValues contentValues = new ContentValues(3);
+
+    contentValues.put(DATE, date - date % 1000);
+    contentValues.put(SNIPPET, snippet);
+    contentValues.put(SNIPPET_TYPE, type);
     SQLiteDatabase db = databaseHelper.getWritableDatabase();
     db.update(TABLE_NAME, contentValues, ID + " = ?", new String[] {threadId + ""});
     notifyConversationListListeners();
@@ -185,9 +198,9 @@ public class ThreadDatabase extends Database {
     try {
       cursor = DatabaseFactory.getMmsSmsDatabase(context).getConversation(threadId);
 
-      if (cursor != null && cursor.getCount() > length) {
+      if (cursor != null && length > 0 && cursor.getCount() > length) {
         Log.w("ThreadDatabase", "Cursor count is greater than length!");
-        cursor.moveToPosition(cursor.getCount() - length);
+        cursor.moveToPosition(length - 1);
 
         long lastTweetDate = cursor.getLong(cursor.getColumnIndexOrThrow(MmsSmsColumns.NORMALIZED_DATE_RECEIVED));
 
@@ -251,24 +264,31 @@ public class ThreadDatabase extends Database {
     if (filter == null || filter.size() == 0)
       return null;
 
-    List<Long> recipientIds = DatabaseFactory.getAddressDatabase(context).getCanonicalAddresses(filter);
+    List<Long> rawRecipientIds = DatabaseFactory.getAddressDatabase(context).getCanonicalAddressIds(filter);
 
-    if (recipientIds == null || recipientIds.size() == 0)
+    if (rawRecipientIds == null || rawRecipientIds.size() == 0)
       return null;
 
-    String selection       = RECIPIENT_IDS + " = ?";
-    String[] selectionArgs = new String[recipientIds.size()];
+    SQLiteDatabase   db                      = databaseHelper.getReadableDatabase();
+    List<List<Long>> partitionedRecipientIds = Util.partition(rawRecipientIds, 900);
+    List<Cursor>     cursors                 = new LinkedList<>();
 
-    for (int i=0;i<recipientIds.size()-1;i++)
-      selection += (" OR " + RECIPIENT_IDS + " = ?");
+    for (List<Long> recipientIds : partitionedRecipientIds) {
+      String   selection      = RECIPIENT_IDS + " = ?";
+      String[] selectionArgs  = new String[recipientIds.size()];
 
-    int i= 0;
-    for (long id : recipientIds) {
-      selectionArgs[i++] = id+"";
+      for (int i=0;i<recipientIds.size()-1;i++)
+        selection += (" OR " + RECIPIENT_IDS + " = ?");
+
+      int i= 0;
+      for (long id : recipientIds) {
+        selectionArgs[i++] = String.valueOf(id);
+      }
+
+      cursors.add(db.query(TABLE_NAME, null, selection, selectionArgs, null, null, DATE + " DESC"));
     }
 
-    SQLiteDatabase db = databaseHelper.getReadableDatabase();
-    Cursor cursor     = db.query(TABLE_NAME, null, selection, selectionArgs, null, null, DATE + " DESC");
+    Cursor cursor = cursors.size() > 1 ? new MergeCursor(cursors.toArray(new Cursor[cursors.size()])) : cursors.get(0);
     setNotifyConverationListListeners(cursor);
     return cursor;
   }
@@ -283,6 +303,7 @@ public class ThreadDatabase extends Database {
   public void deleteConversation(long threadId) {
     DatabaseFactory.getSmsDatabase(context).deleteThread(threadId);
     DatabaseFactory.getMmsDatabase(context).deleteThread(threadId);
+    DatabaseFactory.getDraftDatabase(context).clearDrafts(threadId);
     deleteThread(threadId);
     notifyConversationListeners(threadId);
     notifyConversationListListeners();
@@ -292,6 +313,7 @@ public class ThreadDatabase extends Database {
   public void deleteConversations(Set<Long> selectedConversations) {
     DatabaseFactory.getSmsDatabase(context).deleteThreads(selectedConversations);
     DatabaseFactory.getMmsDatabase(context).deleteThreads(selectedConversations);
+    DatabaseFactory.getDraftDatabase(context).clearDrafts(selectedConversations);
     deleteThreads(selectedConversations);
     notifyConversationListeners(selectedConversations);
     notifyConversationListListeners();
@@ -300,6 +322,7 @@ public class ThreadDatabase extends Database {
   public void deleteAllConversations() {
     DatabaseFactory.getSmsDatabase(context).deleteAllThreads();
     DatabaseFactory.getMmsDatabase(context).deleteAllThreads();
+    DatabaseFactory.getDraftDatabase(context).clearAllDrafts();
     deleteAllThreads();
   }
 
@@ -325,7 +348,7 @@ public class ThreadDatabase extends Database {
   }
 
   public long getThreadIdFor(Recipients recipients) {
-    return getThreadIdFor(recipients, 0);
+    return getThreadIdFor(recipients, DistributionTypes.DEFAULT);
   }
 
   public long getThreadIdFor(Recipients recipients, int distributionType) {
@@ -349,7 +372,7 @@ public class ThreadDatabase extends Database {
     }
   }
 
-  public Recipients getRecipientsForThreadId(Context context, long threadId) {
+  public @Nullable Recipients getRecipientsForThreadId(long threadId) {
     SQLiteDatabase db = databaseHelper.getReadableDatabase();
     Cursor cursor     = null;
 
@@ -368,41 +391,48 @@ public class ThreadDatabase extends Database {
     return null;
   }
 
-  public void update(long threadId) {
+  public boolean update(long threadId) {
     MmsSmsDatabase mmsSmsDatabase = DatabaseFactory.getMmsSmsDatabase(context);
     long count                    = mmsSmsDatabase.getConversationCount(threadId);
 
     if (count == 0) {
       deleteThread(threadId);
       notifyConversationListListeners();
-      return;
+      return true;
     }
 
     MmsSmsDatabase.Reader reader = null;
 
     try {
-      reader               = mmsSmsDatabase.readerFor(mmsSmsDatabase.getConversationSnippet(threadId));
-      MessageRecord record = null;
+      reader = mmsSmsDatabase.readerFor(mmsSmsDatabase.getConversationSnippet(threadId));
+      MessageRecord record;
 
       if (reader != null && (record = reader.getNext()) != null) {
-        updateThread(threadId, count, record.getBody().getBody(), record.getDateReceived(), record.getType());
+        final long timestamp;
+
+        if (record.isPush()) timestamp = record.getDateSent();
+        else                 timestamp = record.getDateReceived();
+
+        updateThread(threadId, count, record.getBody().getBody(), timestamp, record.getType());
+        notifyConversationListListeners();
+        return false;
       } else {
         deleteThread(threadId);
+        notifyConversationListListeners();
+        return true;
       }
     } finally {
       if (reader != null)
         reader.close();
     }
-
-    notifyConversationListListeners();
   }
 
   public static interface ProgressListener {
     public void onProgress(int complete, int total);
   }
 
-  public Reader readerFor(Cursor cursor, MasterSecret masterSecret) {
-    return new Reader(cursor, masterSecret);
+  public Reader readerFor(Cursor cursor, MasterCipher masterCipher) {
+    return new Reader(cursor, masterCipher);
   }
 
   public static class DistributionTypes {
@@ -413,14 +443,12 @@ public class ThreadDatabase extends Database {
 
   public class Reader {
 
-    private final Cursor cursor;
+    private final Cursor       cursor;
     private final MasterCipher masterCipher;
 
-    public Reader(Cursor cursor, MasterSecret masterSecret) {
-      this.cursor = cursor;
-
-      if (masterSecret != null) this.masterCipher = new MasterCipher(masterSecret);
-      else                      this.masterCipher = null;
+    public Reader(Cursor cursor, MasterCipher masterCipher) {
+      this.cursor       = cursor;
+      this.masterCipher = masterCipher;
     }
 
     public ThreadRecord getNext() {
@@ -451,16 +479,16 @@ public class ThreadDatabase extends Database {
         long type   = cursor.getLong(cursor.getColumnIndexOrThrow(ThreadDatabase.SNIPPET_TYPE));
         String body = cursor.getString(cursor.getColumnIndexOrThrow(SNIPPET));
 
-        if (!Util.isEmpty(body) && masterCipher != null && MmsSmsColumns.Types.isSymmetricEncryption(type)) {
+        if (!TextUtils.isEmpty(body) && masterCipher != null && MmsSmsColumns.Types.isSymmetricEncryption(type)) {
           return new DisplayRecord.Body(masterCipher.decryptBody(body), true);
-        } else if (!Util.isEmpty(body) && masterCipher == null && MmsSmsColumns.Types.isSymmetricEncryption(type)) {
+        } else if (!TextUtils.isEmpty(body) && masterCipher == null && MmsSmsColumns.Types.isSymmetricEncryption(type)) {
           return new DisplayRecord.Body(body, false);
         } else {
           return new DisplayRecord.Body(body, true);
         }
       } catch (InvalidMessageException e) {
         Log.w("ThreadDatabase", e);
-        return new DisplayRecord.Body("Error decrypting message.", true);
+        return new DisplayRecord.Body(context.getString(R.string.ThreadDatabase_error_decrypting_message), true);
       }
     }
 

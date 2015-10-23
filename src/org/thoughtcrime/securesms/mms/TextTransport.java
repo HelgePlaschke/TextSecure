@@ -1,5 +1,6 @@
 /** 
  * Copyright (C) 2011 Whisper Systems
+ * Copyright (C) 2014 Open Whisper Systems
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,27 +17,18 @@
  */
 package org.thoughtcrime.securesms.mms;
 
-import java.io.IOException;
-
-import org.thoughtcrime.securesms.crypto.TransportDetails;
 import org.thoughtcrime.securesms.util.Base64;
 
-public class TextTransport implements TransportDetails {
+import java.io.IOException;
 
-  public byte[] decodeMessage(byte[] encodedMessageBytes) throws IOException {
+
+public class TextTransport {
+
+  public byte[] getDecodedMessage(byte[] encodedMessageBytes) throws IOException {
     return Base64.decode(encodedMessageBytes);
   }
 
-  public byte[] encodeMessage(byte[] messageWithMac) {
+  public byte[] getEncodedMessage(byte[] messageWithMac) {
     return Base64.encodeBytes(messageWithMac).getBytes();
   }
-
-  public byte[] getPaddedMessageBody(byte[] messageBody) {
-    return messageBody;
-  }
-
-  public byte[] stripPaddedMessage(byte[] messageWithPadding) {
-    return messageWithPadding;
-  }
-
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2011 Whisper Systems
+ * Copyright (C) 2015 Open Whisper Systems
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,144 +16,231 @@
  */
 package org.thoughtcrime.securesms;
 
-import android.content.Intent;
+import android.content.Context;
+import android.graphics.Rect;
+import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentManager;
-import android.support.v4.app.FragmentTransaction;
+import android.support.v4.widget.SwipeRefreshLayout;
+import android.support.v7.widget.Toolbar;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
+import android.util.Log;
+import android.view.TouchDelegate;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 
-import org.thoughtcrime.securesms.recipients.Recipients;
+import org.thoughtcrime.securesms.components.AnimatingToggle;
+import org.thoughtcrime.securesms.crypto.MasterSecret;
+import org.thoughtcrime.securesms.util.DirectoryHelper;
+import org.thoughtcrime.securesms.util.DynamicLanguage;
+import org.thoughtcrime.securesms.util.DynamicNoActionBarTheme;
 import org.thoughtcrime.securesms.util.DynamicTheme;
+import org.thoughtcrime.securesms.util.ServiceUtil;
 
-import com.actionbarsherlock.app.ActionBar;
-import com.actionbarsherlock.app.ActionBar.Tab;
-import com.actionbarsherlock.app.ActionBar.TabListener;
-import com.actionbarsherlock.view.Menu;
-import com.actionbarsherlock.view.MenuInflater;
-import com.actionbarsherlock.view.MenuItem;
+import java.io.IOException;
+import java.lang.ref.WeakReference;
 
 /**
- * Activity container for selecting a list of contacts.  Provides a tab frame for
- * contact, group, and "recent contact" activity tabs.  Used by ComposeMessageActivity
- * when selecting a list of contacts to address a message to.
+ * Base activity container for selecting a list of contacts.
  *
  * @author Moxie Marlinspike
  *
  */
-public class ContactSelectionActivity extends PassphraseRequiredSherlockFragmentActivity {
+public abstract class ContactSelectionActivity extends PassphraseRequiredActionBarActivity
+                                               implements SwipeRefreshLayout.OnRefreshListener,
+                                                          ContactSelectionListFragment.OnContactSelectedListener
+{
+  private static final String TAG             = ContactSelectionActivity.class.getSimpleName();
+  public  final static String PUSH_ONLY_EXTRA = "push_only";
 
-  private final DynamicTheme dynamicTheme = new DynamicTheme();
+  private final DynamicTheme    dynamicTheme    = new DynamicNoActionBarTheme();
+  private final DynamicLanguage dynamicLanguage = new DynamicLanguage();
 
-  private ContactSelectionListFragment contactsFragment;
-  private ContactSelectionGroupsFragment groupsFragment;
-  private ContactSelectionRecentFragment recentFragment;
+  protected ContactSelectionListFragment contactsFragment;
 
-  private Recipients recipients;
+  private   Toolbar         toolbar;
+  private   EditText        searchText;
+  private   AnimatingToggle toggle;
+  protected ImageView       action;
+  private   ImageView       keyboardToggle;
+  private   ImageView       dialpadToggle;
+  private   ImageView       clearToggle;
+  private   LinearLayout    toggleContainer;
 
   @Override
-  protected void onCreate(Bundle icicle) {
+  protected void onPreCreate() {
     dynamicTheme.onCreate(this);
-    super.onCreate(icicle);
+    dynamicLanguage.onCreate(this);
+  }
 
-    ActionBar actionBar = this.getSupportActionBar();
-    actionBar.setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
-    actionBar.setDisplayHomeAsUpEnabled(true);
-
+  @Override
+  protected void onCreate(Bundle icicle, MasterSecret masterSecret) {
     setContentView(R.layout.contact_selection_activity);
 
-    setupContactsTab();
-    setupGroupsTab();
-    setupRecentTab();
+    initializeToolbar();
+    initializeResources();
+    initializeSearch();
   }
 
   @Override
   public void onResume() {
     super.onResume();
     dynamicTheme.onResume(this);
+    dynamicLanguage.onResume(this);
   }
 
-  @Override
-  public boolean onCreateOptionsMenu(Menu menu) {
-    MenuInflater inflater = this.getSupportMenuInflater();
-    inflater.inflate(R.menu.contact_selection, menu);
+  private void initializeToolbar() {
+    this.toolbar = (Toolbar) findViewById(R.id.toolbar);
+    setSupportActionBar(toolbar);
 
-    return true;
+    getSupportActionBar().setDisplayHomeAsUpEnabled(false);
+    getSupportActionBar().setDisplayShowTitleEnabled(false);
   }
 
-  @Override
-  public boolean onOptionsItemSelected(MenuItem item) {
-    switch (item.getItemId()) {
-    case R.id.menu_selection_finished:
-    case android.R.id.home:
-      handleSelectionFinished(); return true;
-    }
+  private void initializeResources() {
+    this.action          = (ImageView) findViewById(R.id.action_icon);
+    this.searchText      = (EditText) findViewById(R.id.search_view);
+    this.toggle          = (AnimatingToggle) findViewById(R.id.button_toggle);
+    this.keyboardToggle  = (ImageView) findViewById(R.id.search_keyboard);
+    this.dialpadToggle   = (ImageView) findViewById(R.id.search_dialpad);
+    this.clearToggle     = (ImageView) findViewById(R.id.search_clear);
+    this.toggleContainer = (LinearLayout) findViewById(R.id.toggle_container);
 
-    return false;
-  }
+    contactsFragment = (ContactSelectionListFragment) getSupportFragmentManager().findFragmentById(R.id.contact_selection_list_fragment);
+    contactsFragment.setOnContactSelectedListener(this);
+    contactsFragment.setOnRefreshListener(this);
 
-  private void handleSelectionFinished() {
-    recipients = contactsFragment.getSelectedContacts();
-    recipients.append(recentFragment.getSelectedContacts());
-    recipients.append(groupsFragment.getSelectedContacts(this));
-
-    Intent resultIntent = getIntent();
-    resultIntent.putExtra("recipients", this.recipients);
-
-    setResult(RESULT_OK, resultIntent);
-
-    finish();
-  }
-
-  private ActionBar.Tab constructTab(final Fragment fragment) {
-    ActionBar actionBar = this.getSupportActionBar();
-    ActionBar.Tab tab   = actionBar.newTab();
-
-    tab.setTabListener(new TabListener(){
+    this.keyboardToggle.setOnClickListener(new View.OnClickListener() {
       @Override
-      public void onTabSelected(Tab tab, FragmentTransaction ignore) {
-        FragmentManager manager = ContactSelectionActivity.this.getSupportFragmentManager();
-        FragmentTransaction ft  = manager.beginTransaction();
-
-        ft.add(R.id.fragment_container, fragment);
-        ft.commit();
+      public void onClick(View v) {
+        searchText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
+        ServiceUtil.getInputMethodManager(ContactSelectionActivity.this).showSoftInput(searchText, 0);
+        displayTogglingView(dialpadToggle);
       }
-
-      @Override
-      public void onTabUnselected(Tab tab, FragmentTransaction ignore) {
-        FragmentManager manager = ContactSelectionActivity.this.getSupportFragmentManager();
-        FragmentTransaction ft  = manager.beginTransaction();
-        ft.remove(fragment);
-        ft.commit();
-      }
-      @Override
-      public void onTabReselected(Tab tab, FragmentTransaction ft) {}
     });
 
-    return tab;
+    this.dialpadToggle.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        searchText.setInputType(InputType.TYPE_CLASS_PHONE);
+        ServiceUtil.getInputMethodManager(ContactSelectionActivity.this).showSoftInput(searchText, 0);
+        displayTogglingView(keyboardToggle);
+      }
+    });
+
+    this.clearToggle.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        searchText.setText("");
+
+        if (SearchUtil.isTextInput(searchText)) displayTogglingView(dialpadToggle);
+        else                                    displayTogglingView(keyboardToggle);
+      }
+    });
+
+    expandTapArea(toolbar, action, 500);
+    expandTapArea(toggleContainer, dialpadToggle, 500);
   }
 
-  private void setupContactsTab() {
-    contactsFragment = (ContactSelectionListFragment)Fragment.instantiate(this,
-                        ContactSelectionListFragment.class.getName());
-    ActionBar.Tab contactsTab = constructTab(contactsFragment);
-    contactsTab.setIcon(R.drawable.ic_tab_contacts);
-    this.getSupportActionBar().addTab(contactsTab);
+  private void initializeSearch() {
+    this.searchText.addTextChangedListener(new TextWatcher() {
+      @Override
+      public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+
+      }
+
+      @Override
+      public void onTextChanged(CharSequence s, int start, int before, int count) {
+
+      }
+
+      @Override
+      public void afterTextChanged(Editable s) {
+        if      (!SearchUtil.isEmpty(searchText))     displayTogglingView(clearToggle);
+        else if (SearchUtil.isTextInput(searchText))  displayTogglingView(dialpadToggle);
+        else if (SearchUtil.isPhoneInput(searchText)) displayTogglingView(keyboardToggle);
+
+        contactsFragment.setQueryFilter(searchText.getText().toString());
+      }
+    });
   }
 
-  private void setupGroupsTab() {
-    groupsFragment = (ContactSelectionGroupsFragment)Fragment.instantiate(this,
-                      ContactSelectionGroupsFragment.class.getName());
-    ActionBar.Tab groupsTab = constructTab(groupsFragment);
-    groupsTab.setIcon(R.drawable.ic_tab_groups);
-    this.getSupportActionBar().addTab(groupsTab);
+  @Override
+  public void onRefresh() {
+    new RefreshDirectoryTask(this).execute(getApplicationContext());
   }
 
-  private void setupRecentTab() {
-    recentFragment = (ContactSelectionRecentFragment)Fragment.instantiate(this,
-                      ContactSelectionRecentFragment.class.getName());
+  @Override
+  public void onContactSelected(String number) {}
 
-    ActionBar.Tab recentTab = constructTab(recentFragment);
-    recentTab.setIcon(R.drawable.ic_tab_recent);
-    this.getSupportActionBar().addTab(recentTab);
+  private void displayTogglingView(View view) {
+    toggle.display(view);
+    expandTapArea(toggleContainer, view, 500);
+  }
+
+  private void expandTapArea(final View container, final View child, final int padding) {
+    container.post(new Runnable() {
+      @Override
+      public void run() {
+        Rect rect = new Rect();
+        child.getHitRect(rect);
+
+        rect.top    -= padding;
+        rect.left   -= padding;
+        rect.right  += padding;
+        rect.bottom += padding;
+
+        container.setTouchDelegate(new TouchDelegate(rect, child));
+      }
+    });
+  }
+
+  private static class SearchUtil {
+
+    public static boolean isTextInput(EditText editText) {
+      return (editText.getInputType() & InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT;
+    }
+
+    public static boolean isPhoneInput(EditText editText) {
+      return (editText.getInputType() & InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_PHONE;
+    }
+
+    public static boolean isEmpty(EditText editText) {
+      return editText.getText().length() <= 0;
+    }
+  }
+
+  private static class RefreshDirectoryTask extends AsyncTask<Context, Void, Void> {
+
+    private final WeakReference<ContactSelectionActivity> activity;
+
+    private RefreshDirectoryTask(ContactSelectionActivity activity) {
+      this.activity = new WeakReference<>(activity);
+    }
+
+
+    @Override
+    protected Void doInBackground(Context... params) {
+      try {
+        DirectoryHelper.refreshDirectory(params[0]);
+      } catch (IOException e) {
+        Log.w(TAG, e);
+      }
+
+      return null;
+    }
+
+    @Override
+    protected void onPostExecute(Void result) {
+      ContactSelectionActivity activity = this.activity.get();
+
+      if (activity != null && !activity.isFinishing()) {
+        activity.searchText.setText("");
+        activity.contactsFragment.resetQueryFilter();
+      }
+    }
   }
 }
